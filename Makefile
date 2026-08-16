@@ -11,11 +11,11 @@ install: ## Install dependencies (local)
 dev: ## Run development servers locally
 	(cd backend && ../.venv/bin/uvicorn app.main:app --reload) & (cd frontend && npm run dev)
 
-test: ## Run backend tests
-	cd backend && ../.venv/bin/pytest
+test: ## Run backend tests (inside Docker)
+	docker compose exec backend pytest tests/ -v
 
-lint: ## Lint codebase
-	cd backend && ../.venv/bin/ruff check .
+lint: ## Lint codebase (inside Docker)
+	docker compose exec backend ruff check .
 	cd frontend && npm run lint
 
 format: ## Format codebase
