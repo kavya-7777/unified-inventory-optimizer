@@ -31,11 +31,12 @@ graph TD
 ## Local Setup
 1. Clone the repository: `git clone <repo> && cd meio-platform`
 2. Set environment variables: `cp .env.example .env`
-3. Start infrastructure: `make docker-up`
-4. Run migrations: `make migrate`
-5. Generate data & seed: `make generate-data && make seed`
-6. Run tests: `make test`
-7. Start dev servers (if not using docker for apps): `make dev`
+3. Start infrastructure (Postgres, FastAPI, React via Docker): `sudo docker compose up -d`
+4. Run migrations (inside container): `sudo make migrate`
+5. Generate data & seed: `sudo make generate-data && sudo make seed`
+6. Run tests: `sudo make test`
+
+*(Note: Depending on your system's Docker group permissions, you may need to prefix Docker and Make commands with `sudo`).*
 
 Access the apps:
 - Frontend: http://localhost:5173
