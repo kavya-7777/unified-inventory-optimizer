@@ -1,0 +1,371 @@
+{
+  "locations": [
+    {
+      "id": "DC0",
+      "name": "Distribution Center 0",
+      "type": "DC"
+    },
+    {
+      "id": "DC1",
+      "name": "Distribution Center 1",
+      "type": "DC"
+    },
+    {
+      "id": "DC2",
+      "name": "Distribution Center 2",
+      "type": "DC"
+    },
+    {
+      "id": "ST0",
+      "name": "Store 0",
+      "type": "Store"
+    },
+    {
+      "id": "ST1",
+      "name": "Store 1",
+      "type": "Store"
+    },
+    {
+      "id": "ST2",
+      "name": "Store 2",
+      "type": "Store"
+    },
+    {
+      "id": "ST3",
+      "name": "Store 3",
+      "type": "Store"
+    },
+    {
+      "id": "ST4",
+      "name": "Store 4",
+      "type": "Store"
+    },
+    {
+      "id": "ST5",
+      "name": "Store 5",
+      "type": "Store"
+    },
+    {
+      "id": "ST6",
+      "name": "Store 6",
+      "type": "Store"
+    },
+    {
+      "id": "ST7",
+      "name": "Store 7",
+      "type": "Store"
+    },
+    {
+      "id": "ST8",
+      "name": "Store 8",
+      "type": "Store"
+    },
+    {
+      "id": "ST9",
+      "name": "Store 9",
+      "type": "Store"
+    },
+    {
+      "id": "ST10",
+      "name": "Store 10",
+      "type": "Store"
+    },
+    {
+      "id": "ST11",
+      "name": "Store 11",
+      "type": "Store"
+    },
+    {
+      "id": "ST12",
+      "name": "Store 12",
+      "type": "Store"
+    },
+    {
+      "id": "ST13",
+      "name": "Store 13",
+      "type": "Store"
+    },
+    {
+      "id": "ST14",
+      "name": "Store 14",
+      "type": "Store"
+    },
+    {
+      "id": "ST15",
+      "name": "Store 15",
+      "type": "Store"
+    },
+    {
+      "id": "ST16",
+      "name": "Store 16",
+      "type": "Store"
+    },
+    {
+      "id": "ST17",
+      "name": "Store 17",
+      "type": "Store"
+    },
+    {
+      "id": "ST18",
+      "name": "Store 18",
+      "type": "Store"
+    },
+    {
+      "id": "ST19",
+      "name": "Store 19",
+      "type": "Store"
+    }
+  ],
+  "products": [
+    {
+      "id": "P0",
+      "name": "Product 0",
+      "category": "General"
+    },
+    {
+      "id": "P1",
+      "name": "Product 1",
+      "category": "General"
+    },
+    {
+      "id": "P2",
+      "name": "Product 2",
+      "category": "General"
+    },
+    {
+      "id": "P3",
+      "name": "Product 3",
+      "category": "General"
+    },
+    {
+      "id": "P4",
+      "name": "Product 4",
+      "category": "General"
+    },
+    {
+      "id": "P5",
+      "name": "Product 5",
+      "category": "General"
+    },
+    {
+      "id": "P6",
+      "name": "Product 6",
+      "category": "General"
+    },
+    {
+      "id": "P7",
+      "name": "Product 7",
+      "category": "General"
+    },
+    {
+      "id": "P8",
+      "name": "Product 8",
+      "category": "General"
+    },
+    {
+      "id": "P9",
+      "name": "Product 9",
+      "category": "General"
+    },
+    {
+      "id": "P10",
+      "name": "Product 10",
+      "category": "General"
+    },
+    {
+      "id": "P11",
+      "name": "Product 11",
+      "category": "General"
+    },
+    {
+      "id": "P12",
+      "name": "Product 12",
+      "category": "General"
+    },
+    {
+      "id": "P13",
+      "name": "Product 13",
+      "category": "General"
+    },
+    {
+      "id": "P14",
+      "name": "Product 14",
+      "category": "General"
+    },
+    {
+      "id": "P15",
+      "name": "Product 15",
+      "category": "General"
+    },
+    {
+      "id": "P16",
+      "name": "Product 16",
+      "category": "General"
+    },
+    {
+      "id": "P17",
+      "name": "Product 17",
+      "category": "General"
+    },
+    {
+      "id": "P18",
+      "name": "Product 18",
+      "category": "General"
+    },
+    {
+      "id": "P19",
+      "name": "Product 19",
+      "category": "General"
+    },
+    {
+      "id": "P20",
+      "name": "Product 20",
+      "category": "General"
+    },
+    {
+      "id": "P21",
+      "name": "Product 21",
+      "category": "General"
+    },
+    {
+      "id": "P22",
+      "name": "Product 22",
+      "category": "General"
+    },
+    {
+      "id": "P23",
+      "name": "Product 23",
+      "category": "General"
+    },
+    {
+      "id": "P24",
+      "name": "Product 24",
+      "category": "General"
+    },
+    {
+      "id": "P25",
+      "name": "Product 25",
+      "category": "General"
+    },
+    {
+      "id": "P26",
+      "name": "Product 26",
+      "category": "General"
+    },
+    {
+      "id": "P27",
+      "name": "Product 27",
+      "category": "General"
+    },
+    {
+      "id": "P28",
+      "name": "Product 28",
+      "category": "General"
+    },
+    {
+      "id": "P29",
+      "name": "Product 29",
+      "category": "General"
+    },
+    {
+      "id": "P30",
+      "name": "Product 30",
+      "category": "General"
+    },
+    {
+      "id": "P31",
+      "name": "Product 31",
+      "category": "General"
+    },
+    {
+      "id": "P32",
+      "name": "Product 32",
+      "category": "General"
+    },
+    {
+      "id": "P33",
+      "name": "Product 33",
+      "category": "General"
+    },
+    {
+      "id": "P34",
+      "name": "Product 34",
+      "category": "General"
+    },
+    {
+      "id": "P35",
+      "name": "Product 35",
+      "category": "General"
+    },
+    {
+      "id": "P36",
+      "name": "Product 36",
+      "category": "General"
+    },
+    {
+      "id": "P37",
+      "name": "Product 37",
+      "category": "General"
+    },
+    {
+      "id": "P38",
+      "name": "Product 38",
+      "category": "General"
+    },
+    {
+      "id": "P39",
+      "name": "Product 39",
+      "category": "General"
+    },
+    {
+      "id": "P40",
+      "name": "Product 40",
+      "category": "General"
+    },
+    {
+      "id": "P41",
+      "name": "Product 41",
+      "category": "General"
+    },
+    {
+      "id": "P42",
+      "name": "Product 42",
+      "category": "General"
+    },
+    {
+      "id": "P43",
+      "name": "Product 43",
+      "category": "General"
+    },
+    {
+      "id": "P44",
+      "name": "Product 44",
+      "category": "General"
+    },
+    {
+      "id": "P45",
+      "name": "Product 45",
+      "category": "General"
+    },
+    {
+      "id": "P46",
+      "name": "Product 46",
+      "category": "General"
+    },
+    {
+      "id": "P47",
+      "name": "Product 47",
+      "category": "General"
+    },
+    {
+      "id": "P48",
+      "name": "Product 48",
+      "category": "General"
+    },
+    {
+      "id": "P49",
+      "name": "Product 49",
+      "category": "General"
+    }
+  ]
+}

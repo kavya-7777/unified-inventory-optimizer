@@ -1,0 +1,20 @@
+name: Nightly MEIO Pipeline
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Run at 2 AM UTC daily
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger MEIO Pipeline
+        env:
+          API_URL: ${{ secrets.PROD_API_URL }}
+          PIPELINE_SECRET: ${{ secrets.PIPELINE_SECRET }}
+        run: |
+          curl -X POST "$API_URL/api/v1/runs/trigger" \
+            -H "Authorization: Bearer $PIPELINE_SECRET" \
+            -H "Content-Type: application/json" \
+            -d '{"run_type": "scheduled"}'
