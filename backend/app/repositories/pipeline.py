@@ -60,6 +60,7 @@ class OptimizationResultRepository:
         Persist solver output per node. 
         location_product_map maps node_id → (location_id, product_id).
         """
+        batch_size = 1000
         records = []
         for node_id, result in node_results.items():
             loc_id, prod_id = location_product_map.get(node_id, (node_id, None))
@@ -74,9 +75,13 @@ class OptimizationResultRepository:
                 reorder_point=result.get("reorder_point"),
             )
             records.append(record)
-        batch_size = 1000
-        for i in range(0, len(records), batch_size):
-            self.db.add_all(records[i:i + batch_size])
+            if len(records) >= batch_size:
+                self.db.add_all(records)
+                self.db.commit()
+                records = []
+                
+        if records:
+            self.db.add_all(records)
             self.db.commit()
 
 

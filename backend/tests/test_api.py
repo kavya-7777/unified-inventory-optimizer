@@ -163,17 +163,101 @@ def test_forecasting_runner_routes_correctly():
 # ─────────────────────────────────────────────
 
 def test_lp_fallback_returns_feasible():
-    """LP fallback should always return a FEASIBLE solution."""
-    from app.optimization.lp import run_lp_solver
-    from app.optimization.gsm import GSMNetwork, GSMNode, GSMEdge
-    network = GSMNetwork(
-        nodes=[
-            GSMNode(id="Supplier", type="Supplier", processing_time=2, demand_std=0, holding_cost=1, max_s_out=10),
-            GSMNode(id="DC1", type="DC", processing_time=1, demand_std=50, holding_cost=5, max_s_out=5),
+    payload = {
+        "run_type": "manual",
+        "max_service_time": 5,
+        "nodes": [
+            {"id": "Supplier", "type": "Supplier", "processing_time": 2, "max_s_out": 2},
+            {"id": "DC1", "type": "DC", "processing_time": 1, "max_s_out": 2},
+            {"id": "Store1", "type": "Store", "processing_time": 0, "max_s_out": 0},
         ],
-        edges=[GSMEdge(source="Supplier", target="DC1", transit_time=3)]
-    )
-    result = run_lp_solver(network)
-    assert result["status"] == "FEASIBLE"
-    assert result["fallback_used"] is True
-    assert "DC1" in result["nodes"]
+        "edges": [
+            {"source": "Supplier", "target": "DC1", "transit_time": 10},  # Force infeasibility under max_time=5
+            {"source": "DC1", "target": "Store1", "transit_time": 1},
+        ],
+    }
+    response = client.post("/api/v1/optimization/run", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["solver"] == "lp-fallback"
+    assert data["fallback_used"] is True
+    assert data["status"] == "FEASIBLE"
+
+
+def test_ingest_demand():
+    locs = client.get("/api/v1/locations").json()
+    prods = client.get("/api/v1/products").json()
+    if not locs or not prods:
+        pytest.skip("Skipping demand ingest test: DB needs at least one location and product.")
+
+    loc_id = locs[0]["id"]
+    prod_id = prods[0]["id"]
+
+    payload = {
+        "records": [
+            {"location_id": loc_id, "product_id": prod_id, "date": "2024-01-01", "quantity": 10},
+            {"location_id": loc_id, "product_id": prod_id, "date": "2024-01-02", "quantity": 15},
+        ]
+    }
+    response = client.post("/api/v1/demand/ingest", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "inserted_count" in data
+
+
+def test_get_demand_history():
+    locs = client.get("/api/v1/locations").json()
+    prods = client.get("/api/v1/products").json()
+    if not locs or not prods:
+        pytest.skip("Skipping demand history test: DB empty.")
+
+    loc_id = locs[0]["id"]
+    prod_id = prods[0]["id"]
+
+    response = client.get("/api/v1/demand/history", params={"location_id": loc_id, "product_id": prod_id})
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    if len(data) > 0:
+        assert data[0]["location_id"] == loc_id
+        assert data[0]["product_id"] == prod_id
+
+# ─────────────────────────────────────────────
+# E2E Pipeline Tests
+# ─────────────────────────────────────────────
+
+def test_end_to_end_pipeline():
+    payload = {
+        "run_type": "daily_batch",
+        "horizon": 4,
+        "max_service_time": 30,
+        "nodes": [
+            {"id": "Supplier", "type": "Supplier", "processing_time": 2, "holding_cost": 1.0},
+            {"id": "DC1", "type": "DC", "processing_time": 1, "holding_cost": 2.0},
+            {"id": "Store1", "type": "Store", "processing_time": 0, "holding_cost": 5.0, "demand_std": 10.0}
+        ],
+        "edges": [
+            {"source": "Supplier", "target": "DC1", "transit_time": 3, "cost_per_unit": 2.5, "capacity": 1000},
+            {"source": "DC1", "target": "Store1", "transit_time": 1, "cost_per_unit": 5.0, "capacity": 500}
+        ],
+        "items_history": [
+            {"id": "Store1", "history": [100.0, 110.0, 90.0, 105.0, 100.0, 110.0]}
+        ]
+    }
+    response = client.post("/api/v1/pipeline/run", json=payload)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["status"] == "SUCCESS", f"Pipeline failed: {data}"
+    assert "pipeline_run_id" in data
+    
+    # Forecast stage
+    assert data["stages"]["forecast"]["status"] == "SUCCESS"
+    assert data["stages"]["forecast"]["count"] == 1
+    
+    # GSM stage
+    assert data["stages"]["gsm"]["status"] == "SUCCESS"
+    
+    # Transportation stage
+    assert data["stages"]["transportation"]["status"] == "OPTIMAL"
+    assert "flows" in data["stages"]["transportation"]
+    assert "Supplier->DC1" in data["stages"]["transportation"]["flows"]

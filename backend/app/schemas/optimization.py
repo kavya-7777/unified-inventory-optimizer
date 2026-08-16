@@ -12,6 +12,36 @@ class OptimizationRunRequest(BaseModel):
     node_capacities: Optional[Dict[str, float]] = None
 
 
+class NodeSchema(BaseModel):
+    id: str
+    type: str
+    processing_time: int
+    demand_mean: float = 0.0
+    demand_std: float = 0.0
+    holding_cost: float = 0.0
+    max_s_out: int = 30
+    min_s_out: int = 0
+    service_level: float = 0.95
+
+class EdgeSchema(BaseModel):
+    source: str
+    target: str
+    transit_time: int
+    cost_per_unit: float = 1.0
+    capacity: Optional[float] = None
+
+class ItemHistorySchema(BaseModel):
+    id: str
+    history: List[float]
+    has_trend: bool = False
+
+class PipelineRunRequest(BaseModel):
+    run_type: str = "daily_batch"
+    nodes: Optional[List[NodeSchema]] = None
+    edges: Optional[List[EdgeSchema]] = None
+    items_history: Optional[List[ItemHistorySchema]] = None
+    horizon: int = 4
+    max_service_time: int = 30
 class NodeResult(BaseModel):
     s_in: int
     s_out: int

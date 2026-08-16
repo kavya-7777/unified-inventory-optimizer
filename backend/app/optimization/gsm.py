@@ -73,16 +73,50 @@ class GSMNetwork:
                 errors.append(f"Edge source '{e.source}' not in nodes.")
             if e.target not in node_ids:
                 errors.append(f"Edge target '{e.target}' not in nodes.")
+            if e.transit_time < 0:
+                errors.append(f"Edge from '{e.source}' to '{e.target}' has negative transit time.")
+
         for n in self.nodes:
             if n.holding_cost < 0:
                 errors.append(f"Node '{n.id}' has negative holding cost.")
             if n.processing_time < 0:
                 errors.append(f"Node '{n.id}' has negative processing time.")
+            if n.demand_mean < 0 or n.demand_std < 0:
+                errors.append(f"Node '{n.id}' has negative demand metrics.")
+
+        # Detect circular dependencies using DFS
+        visited = set()
+        stack = set()
+
+        def has_cycle(node: str) -> bool:
+            visited.add(node)
+            stack.add(node)
+            for neighbor in self.successors(node):
+                if neighbor not in visited:
+                    if has_cycle(neighbor):
+                        return True
+                elif neighbor in stack:
+                    return True
+            stack.remove(node)
+            return False
+
+        for n in self.nodes:
+            if n.id not in visited:
+                if has_cycle(n.id):
+                    errors.append(f"Circular supply loop detected involving node '{n.id}'.")
+                    break # One cycle error is enough
+
+        # Check for disconnected sink nodes
+        for sink in self.sink_nodes():
+            if not self.predecessors(sink) and not any(e.target == sink for e in self.edges):
+                if len(self.nodes) > 1:
+                     errors.append(f"Sink node '{sink}' is completely disconnected from the network.")
+
         return errors
 
 
 def build_network_from_dicts(nodes: List[Dict], edges: List[Dict]) -> GSMNetwork:
     """Factory to build a GSMNetwork from plain dictionaries (e.g. from API payload)."""
     gsm_nodes = [GSMNode(**{k: v for k, v in n.items() if k in GSMNode.__dataclass_fields__}) for n in nodes]
-    gsm_edges = [GSMEdge(**e) for e in edges]
+    gsm_edges = [GSMEdge(**{k: v for k, v in e.items() if k in GSMEdge.__dataclass_fields__}) for e in edges]
     return GSMNetwork(nodes=gsm_nodes, edges=gsm_edges)

@@ -7,7 +7,8 @@ from app.repositories.pipeline import PipelineRunRepository
 from app.schemas.optimization import OptimizationRunRequest, OptimizationRunResponse, PipelineRunOut, ForecastRunRequest
 from app.services.optimization import trigger_optimization
 from app.forecasting.runner import run_forecast_pipeline
-
+from app.services.pipeline import run_daily_pipeline
+from app.schemas.optimization import PipelineRunRequest
 router = APIRouter(prefix="/api/v1", tags=["optimization"])
 
 
@@ -23,6 +24,15 @@ def run_optimization(payload: OptimizationRunRequest, db: Session = Depends(get_
 def run_forecast(payload: ForecastRunRequest):
     results = run_forecast_pipeline(payload.items, horizon=payload.horizon)
     return {"forecasts": results, "count": len(results)}
+
+
+@router.post("/pipeline/run")
+def run_master_pipeline(payload: PipelineRunRequest, db: Session = Depends(get_db)):
+    """Run the entire E2E pipeline: Validation -> Forecast -> GSM -> Transportation"""
+    try:
+        return run_daily_pipeline(db, payload.model_dump())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"code": "PIPELINE_ERROR", "message": str(e)})
 
 
 @router.get("/runs", response_model=List[PipelineRunOut])
