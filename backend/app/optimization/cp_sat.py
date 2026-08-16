@@ -25,7 +25,12 @@ def calculate_precomputed_ss_costs(
             costs.append(int(cost * scaling_factor))
     return costs
 
-def run_gsm_solver(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], max_time: int = 30) -> Dict[str, Any]:
+def run_gsm_solver(
+    nodes: List[Dict[str, Any]],
+    edges: List[Dict[str, Any]],
+    max_time: int = 30,
+    timeout_seconds: float = 60.0,
+) -> Dict[str, Any]:
     """
     Guaranteed Service Model (GSM) using Google OR-Tools CP-SAT.
     Optimizes safety stock placement across a supply chain network.
@@ -35,6 +40,10 @@ def run_gsm_solver(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], max
     """
     model = cp_model.CpModel()
     
+    # Compute a safe upper bound for net_time = max_time + max processing time in network
+    max_processing = max((n.get("processing_time", 0) for n in nodes), default=0)
+    net_time_ub = max_time + max_processing
+
     # 1. Variables
     s_in = {}
     s_out = {}
@@ -51,13 +60,14 @@ def run_gsm_solver(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], max
         s_out[n_id] = model.NewIntVar(0, node.get("max_s_out", max_time), f's_out_{n_id}')
         
         # Net Replenishment Time: T = S_in + ProcessingTime - S_out
-        net_time[n_id] = model.NewIntVar(0, max_time, f'net_time_{n_id}')
+        # Upper bound uses net_time_ub to avoid infeasibility on long chains
+        net_time[n_id] = model.NewIntVar(0, net_time_ub, f'net_time_{n_id}')
         p_time = node.get("processing_time", 0)
         model.Add(net_time[n_id] == s_in[n_id] + p_time - s_out[n_id])
         
         # Precompute costs mapped to net_time
         cost_array = calculate_precomputed_ss_costs(
-            max_time, 
+            net_time_ub, 
             node.get("demand_std", 0.0), 
             node.get("holding_cost", 0.0)
         )
@@ -85,9 +95,9 @@ def run_gsm_solver(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], max
     # 3. Objective: Minimize total safety stock cost
     model.Minimize(sum(total_cost_vars))
     
-    # 4. Solve
+    # 4. Solve — use configured timeout
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 60.0
+    solver.parameters.max_time_in_seconds = timeout_seconds
     status = solver.Solve(model)
     
     # 5. Extract Results
@@ -108,3 +118,4 @@ def run_gsm_solver(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], max
         "wall_time": solver.WallTime(),
         "nodes": results
     }
+

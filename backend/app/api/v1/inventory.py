@@ -2,26 +2,18 @@
 from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from app.db.session import SessionLocal
+from app.db.deps import get_db
 from app.repositories.inventory import LocationRepository, ProductRepository
 from app.schemas.inventory import LocationOut, ProductOut
 
 router = APIRouter(prefix="/api/v1", tags=["inventory"])
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 @router.get("/locations", response_model=List[LocationOut])
-def get_locations(db: Session = Depends(get_db)):
-    return LocationRepository(db).get_all()
+def get_locations(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return LocationRepository(db).get_all(skip=skip, limit=limit)
 
 
 @router.get("/products", response_model=List[ProductOut])
-def get_products(db: Session = Depends(get_db)):
-    return ProductRepository(db).get_all()
+def get_products(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return ProductRepository(db).get_all(skip=skip, limit=limit)

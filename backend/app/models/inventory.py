@@ -201,7 +201,7 @@ class PipelineRun(Base):
     created_at      = Column(DateTime, default=_now)
 
     optimization_results = relationship("OptimizationResult", back_populates="run")
-    forecasts            = relationship("DemandForecast", back_populates=None)
+    forecasts            = relationship("DemandForecast", foreign_keys="DemandForecast.pipeline_run_id")
 
     __table_args__ = (
         Index("ix_pipeline_runs_status", "status"),

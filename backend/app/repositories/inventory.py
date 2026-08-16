@@ -8,8 +8,8 @@ class LocationRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_all(self) -> List[Location]:
-        return self.db.query(Location).all()
+    def get_all(self, skip: int = 0, limit: int = 100) -> List[Location]:
+        return self.db.query(Location).offset(skip).limit(limit).all()
 
     def get_by_id(self, location_id: str) -> Optional[Location]:
         return self.db.query(Location).filter(Location.id == location_id).first()
@@ -22,8 +22,8 @@ class ProductRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_all(self) -> List[Product]:
-        return self.db.query(Product).all()
+    def get_all(self, skip: int = 0, limit: int = 100) -> List[Product]:
+        return self.db.query(Product).offset(skip).limit(limit).all()
 
     def get_by_id(self, product_id: str) -> Optional[Product]:
         return self.db.query(Product).filter(Product.id == product_id).first()

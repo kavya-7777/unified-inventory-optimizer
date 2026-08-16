@@ -52,10 +52,12 @@ def run_optimization_pipeline(params: Dict[str, Any]) -> Dict[str, Any]:
             "errors": errors,
         }
 
-    # 2. Attempt CP-SAT
-    timeout = settings.OPTIMIZATION_TIMEOUT_SECONDS
+    # 2. Attempt CP-SAT with configured timeout
+    timeout = float(settings.OPTIMIZATION_TIMEOUT_SECONDS)
     solver_result = run_gsm_solver(
-        node_dicts, edge_dicts, max_time=params.get("max_service_time", 30)
+        node_dicts, edge_dicts,
+        max_time=params.get("max_service_time") or 30,
+        timeout_seconds=timeout,
     )
 
     # 3. LP Fallback if CP-SAT timed out or infeasible

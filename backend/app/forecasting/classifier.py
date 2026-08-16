@@ -34,7 +34,6 @@ def classify_demand(history: List[float]) -> DemandPattern:
         return DemandPattern.INTERMITTENT
 
     # ADI: average interval between non-zero demands
-    zero_count = np.sum(arr == 0)
     adi = len(arr) / max(len(nonzero), 1)
 
     # CV²: squared coefficient of variation of non-zero demands

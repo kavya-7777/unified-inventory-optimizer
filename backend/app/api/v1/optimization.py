@@ -2,21 +2,13 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.db.session import SessionLocal
+from app.db.deps import get_db
 from app.repositories.pipeline import PipelineRunRepository
 from app.schemas.optimization import OptimizationRunRequest, OptimizationRunResponse, PipelineRunOut, ForecastRunRequest
 from app.services.optimization import trigger_optimization
 from app.forecasting.runner import run_forecast_pipeline
 
 router = APIRouter(prefix="/api/v1", tags=["optimization"])
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 @router.post("/optimization/run")

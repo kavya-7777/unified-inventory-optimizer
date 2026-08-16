@@ -23,17 +23,20 @@ def calculate_safety_stock(
 
 def batch_calculate_safety_stock(items: List[Dict]) -> List[Dict]:
     """
-    Processes a batch of items and appends the calculated safety stock.
+    Standalone utility to process a batch of items and append calculated safety stock.
+    Creates a copy of the dictionary to avoid mutating the original input.
     """
     results = []
     for item in items:
+        # Create a copy to avoid in-place mutation side effects
+        new_item = dict(item)
         ss = calculate_safety_stock(
-            service_level_z=item.get("service_level_z", 1.645), # Default 95% service level
-            lead_time_mean=item.get("lead_time_mean", 1.0),
-            lead_time_std=item.get("lead_time_std", 0.0),
-            demand_mean=item.get("demand_mean", 0.0),
-            demand_std=item.get("demand_std", 0.0)
+            service_level_z=new_item.get("service_level_z", 1.645), # Default 95% service level
+            lead_time_mean=new_item.get("lead_time_mean", 1.0),
+            lead_time_std=new_item.get("lead_time_std", 0.0),
+            demand_mean=new_item.get("demand_mean", 0.0),
+            demand_std=new_item.get("demand_std", 0.0)
         )
-        item["safety_stock"] = round(ss, 2)
-        results.append(item)
+        new_item["safety_stock"] = round(ss, 2)
+        results.append(new_item)
     return results

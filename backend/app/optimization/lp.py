@@ -1,7 +1,7 @@
 """
 LP Fallback Solver for GSM.
 Used when CP-SAT exceeds the configured timeout (OPTIMIZATION_TIMEOUT_SECONDS).
-Uses scipy.optimize.linprog as a lightweight linear programming fallback.
+Uses a fast, deterministic greedy heuristic to ensure feasibility.
 """
 import math
 from typing import Dict, Any, List

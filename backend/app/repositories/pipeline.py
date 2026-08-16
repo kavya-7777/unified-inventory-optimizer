@@ -74,8 +74,10 @@ class OptimizationResultRepository:
                 reorder_point=result.get("reorder_point"),
             )
             records.append(record)
-        self.db.add_all(records)
-        self.db.commit()
+        batch_size = 1000
+        for i in range(0, len(records), batch_size):
+            self.db.add_all(records[i:i + batch_size])
+            self.db.commit()
 
 
 class AlertRepository:

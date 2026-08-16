@@ -14,6 +14,7 @@ def croston(
     Croston's Method.
     Separately smooths the non-zero demand size (a) and the inter-demand interval (q).
     Forecast = a / q  (demand per period)
+    Note: The first interval is initialized to 1 if the first demand is non-zero.
     """
     if not history:
         return {"forecast": [], "method": "Croston"}
