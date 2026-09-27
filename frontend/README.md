@@ -1,32 +1,48 @@
-# React + TypeScript + Vite
+# MEIO Platform — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + TypeScript + Vite dashboard for the Multi-Echelon Inventory Optimization (MEIO) backend.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Vite 8** + **React 19** + **TypeScript**
+- **Tailwind CSS v4** (via `@tailwindcss/vite`) for styling
+- **TanStack Query** for data fetching/caching against the FastAPI backend
+- **React Router** for client-side routing
+- **Recharts** for the demand-history chart
+- **lucide-react** for icons
 
-## React Compiler
+## Pages
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| Route | Purpose |
+|---|---|
+| `/` | Dashboard — backend health, quick counts, recent pipeline runs |
+| `/inventory` | Paginated Locations and Products tables |
+| `/demand` | Query demand history (chart + table) and bulk-ingest new demand records |
+| `/optimization` | Run the GSM solver, demand forecast, or the full daily pipeline, with JSON editors for nodes/edges/history |
+| `/runs` | Pipeline run history |
+| `/runs/:runId` | Single run detail |
 
-## Expanding the Oxlint configuration
+All API calls live in [`src/lib/api.ts`](src/lib/api.ts), typed against the backend's Pydantic schemas in [`src/lib/types.ts`](src/lib/types.ts).
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+## Setup
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+cp .env.example .env   # defaults to http://localhost:8000
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+The app runs at `http://localhost:5173`. It expects the backend (see `../backend`) running at `VITE_API_URL` (default `http://localhost:8000`), with `CORS_ORIGINS` on the backend including `http://localhost:5173`.
+
+Bring up the full stack (Postgres + backend + frontend) from the repo root with:
+
+```bash
+docker compose up
+```
+
+## Scripts
+
+- `npm run dev` — start the Vite dev server
+- `npm run build` — type-check (`tsc -b`) and build for production
+- `npm run preview` — preview the production build locally
+- `npm run lint` — run oxlint
