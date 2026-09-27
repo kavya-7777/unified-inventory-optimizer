@@ -1,78 +1,101 @@
-import { useQuery, type UseQueryResult } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, Gauge, LineChart, ListTree, Package } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { api } from '@/lib/api'
+import { ArrowUpRight, ListTree } from 'lucide-react'
+import { api, ApiError } from '@/lib/api'
+import { PageHeader } from '@/components/ui/PageHeader'
+import { StatTile, StatTileGrid } from '@/components/ui/StatTile'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
-import { StatusBadge } from '@/components/ui/Badge'
+import { Badge, StatusBadge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
 import { ErrorNotice, Spinner } from '@/components/ui/Feedback'
-import { formatDateTime, formatDuration } from '@/lib/utils'
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  to,
-  tone = 'brand',
-}: {
-  label: string
-  value: string
-  icon: typeof Package
-  to: string
-  tone?: 'brand' | 'danger'
-}) {
-  return (
-    <Link to={to} className="card flex items-center gap-4 px-5 py-4 transition-shadow hover:shadow-sm">
-      <div
-        className={cn(
-          'flex h-10 w-10 items-center justify-center rounded-lg',
-          tone === 'danger' ? 'bg-danger-50 text-danger-600' : 'bg-brand-50 text-brand-600',
-        )}
-      >
-        <Icon className="h-5 w-5" />
-      </div>
-      <div>
-        <p className="text-xs font-medium text-muted">{label}</p>
-        <p className="text-lg font-semibold text-slate-900">{value}</p>
-      </div>
-    </Link>
-  )
-}
+import { formatDateTime, formatDuration, formatNumber } from '@/lib/utils'
 
 export function DashboardPage() {
-  const locations = useQuery({ queryKey: ['locations', 0, 100], queryFn: () => api.listLocations(0, 100) })
-  const products = useQuery({ queryKey: ['products', 0, 100], queryFn: () => api.listProducts(0, 100) })
+  const locations = useQuery({ queryKey: ['locations', 0, 1000], queryFn: () => api.listLocations(0, 1000) })
+  const products = useQuery({ queryKey: ['products', 0, 1000], queryFn: () => api.listProducts(0, 1000) })
   const runs = useQuery({ queryKey: ['runs', 5], queryFn: () => api.listRuns(5) })
-  const alerts = useQuery({
-    queryKey: ['alerts', 'unresolved', 100],
-    queryFn: () => api.listAlerts({ resolved: false, limit: 100 }),
-  })
+  const summary = useQuery({ queryKey: ['dashboard-summary'], queryFn: api.getDashboardSummary })
 
-  const countLabel = (q: UseQueryResult<unknown[], Error>) =>
-    q.isLoading ? '…' : q.isError ? '—' : `${q.data!.length}${q.data!.length === 100 ? '+' : ''}`
+  const nodeCount = locations.data?.length
+  const skuCount = products.data?.length
+  const lastRun = summary.data?.last_run
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-muted">
-          Overview of your multi-echelon inventory optimization (MEIO) platform.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Multi-Echelon Inventory Optimization</h1>
+          <p className="mt-1 text-sm text-muted">
+            {nodeCount != null ? `${nodeCount} nodes` : '— nodes'} · {skuCount != null ? `${skuCount} SKUs` : '— SKUs'} · Guaranteed-service network
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <p className="text-xs font-medium text-muted">Open alerts</p>
+            <p className={summary.data && summary.data.open_alerts > 0 ? 'text-lg font-bold text-danger-600' : 'text-lg font-bold text-slate-900'}>
+              {summary.data ? summary.data.open_alerts : '—'}
+            </p>
+          </div>
+          <Link to="/optimization">
+            <Button size="sm">
+              Run pipeline <ArrowUpRight className="h-3.5 w-3.5" />
+            </Button>
+          </Link>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <StatCard label="Locations" value={countLabel(locations)} icon={Package} to="/inventory" />
-        <StatCard label="Products" value={countLabel(products)} icon={Package} to="/inventory" />
-        <StatCard label="Demand history" value="Explore" icon={LineChart} to="/demand" />
-        <StatCard label="Run optimization" value="GSM · Forecast · Pipeline" icon={Gauge} to="/optimization" />
-        <StatCard
-          label="Unresolved alerts"
-          value={countLabel(alerts)}
-          icon={AlertTriangle}
-          to="/alerts"
-          tone={alerts.data && alerts.data.length > 0 ? 'danger' : 'brand'}
-        />
-      </div>
+      <PageHeader
+        eyebrow="Control tower"
+        title="Network position"
+        description="Guaranteed-service model output across suppliers, distribution centers and stores, refreshed by the nightly optimization pipeline."
+        badges={
+          <>
+            {lastRun && <Badge tone={lastRun.status === 'success' ? 'ok' : 'danger'}>LAST RUN {lastRun.status.toUpperCase()}</Badge>}
+            {lastRun?.fallback_used && <Badge tone="warn">LP FALLBACK</Badge>}
+            <Link to="/runs">
+              <Badge tone="neutral">RUN HISTORY</Badge>
+            </Link>
+          </>
+        }
+      />
+
+      {summary.isLoading && <Spinner />}
+      {summary.isError && (
+        <ErrorNotice message={summary.error instanceof ApiError ? summary.error.message : 'Failed to load dashboard summary'} />
+      )}
+
+      {summary.data && (
+        <StatTileGrid>
+          <StatTile
+            label="Inventory value"
+            value={`$${formatNumber(summary.data.inventory_value / 1_000_000, 2)}M`}
+            caption="on hand, at unit cost"
+          />
+          <StatTile
+            label="Avg service level"
+            value={summary.data.avg_service_level != null ? formatNumber(summary.data.avg_service_level * 100, 1) : '—'}
+            unit="%"
+            caption="policy-weighted target"
+          />
+          <StatTile
+            label="Fill rate"
+            value={summary.data.fill_rate != null ? formatNumber(summary.data.fill_rate * 100, 1) : '—'}
+            unit="%"
+            caption="node-SKU pairs above safety stock"
+          />
+          <StatTile
+            label="At risk"
+            value={String(summary.data.at_risk_count)}
+            caption={`of ${summary.data.measured_pairs} node-SKU pairs`}
+            tone={summary.data.at_risk_count > 0 ? 'warn' : 'default'}
+          />
+          <StatTile
+            label="Open alerts"
+            value={String(summary.data.open_alerts)}
+            tone={summary.data.open_alerts > 0 ? 'danger' : 'default'}
+          />
+        </StatTileGrid>
+      )}
 
       <Card>
         <CardHeader

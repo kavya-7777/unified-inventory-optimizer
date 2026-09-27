@@ -65,6 +65,7 @@ class Lane(Base):
     target_id       = Column(String, ForeignKey("locations.id"), nullable=False)
     transit_time    = Column(Integer, nullable=False)   # Days
     cost_per_unit   = Column(Float, default=0.0)
+    capacity        = Column(Float, nullable=True)      # Max units/period; null = unconstrained
     created_at      = Column(DateTime, default=_now)
 
     __table_args__ = (

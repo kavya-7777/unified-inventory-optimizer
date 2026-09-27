@@ -1,17 +1,22 @@
 import type {
   AlertOut,
+  DashboardSummaryOut,
   DemandHistoryOut,
   DemandIngestResponse,
   DemandRecord,
   ForecastRunRequest,
   ForecastRunResponse,
+  LaneOut,
   LocationOut,
   OptimizationRunRequest,
   OptimizationRunResponse,
   PipelineRunOut,
   PipelineRunRequest,
   PipelineRunResult,
+  PolicyOut,
+  PolicyUpdate,
   ProductOut,
+  TransportationPlanOut,
 } from './types'
 
 export const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:8000'
@@ -98,6 +103,23 @@ export const api = {
     request<LocationOut[]>(`/api/v1/locations${query({ skip, limit })}`),
   listProducts: (skip = 0, limit = 100) =>
     request<ProductOut[]>(`/api/v1/products${query({ skip, limit })}`),
+  listLanes: () => request<LaneOut[]>('/api/v1/lanes'),
+
+  // Policies
+  listPolicies: (params: { q?: string; location_id?: string; skip?: number; limit?: number } = {}) =>
+    request<PolicyOut[]>(`/api/v1/policies${query({ ...params })}`),
+  updatePolicy: (policyId: string, payload: PolicyUpdate) =>
+    request<PolicyOut>(`/api/v1/policies/${policyId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
+  // Dashboard
+  getDashboardSummary: () => request<DashboardSummaryOut>('/api/v1/dashboard/summary'),
+
+  // Transportation
+  getTransportationPlan: (params: { product_id?: string; days?: number } = {}) =>
+    request<TransportationPlanOut>(`/api/v1/transportation/plan${query({ ...params })}`),
 
   // Demand
   ingestDemand: (records: DemandRecord[]) =>

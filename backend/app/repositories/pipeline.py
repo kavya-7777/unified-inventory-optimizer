@@ -1,6 +1,7 @@
 """Repository: Data access layer for pipeline runs and optimization results."""
 from datetime import datetime
 from typing import List, Optional
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.models.inventory import PipelineRun, OptimizationResult, Alert
 
@@ -83,6 +84,32 @@ class OptimizationResultRepository:
         if records:
             self.db.add_all(records)
             self.db.commit()
+
+    def get_all_latest(self) -> List[OptimizationResult]:
+        """One row per (location_id, product_id): the most recent optimization result
+        (by created_at), across all pipeline runs. Rows with a null location/product
+        (the demo network's synthetic node ids) are excluded since they can't be
+        matched to a real policy pair."""
+        latest = (
+            self.db.query(
+                OptimizationResult.location_id,
+                OptimizationResult.product_id,
+                func.max(OptimizationResult.created_at).label("max_created_at"),
+            )
+            .filter(OptimizationResult.location_id.isnot(None), OptimizationResult.product_id.isnot(None))
+            .group_by(OptimizationResult.location_id, OptimizationResult.product_id)
+            .subquery()
+        )
+        return (
+            self.db.query(OptimizationResult)
+            .join(
+                latest,
+                (OptimizationResult.location_id == latest.c.location_id)
+                & (OptimizationResult.product_id == latest.c.product_id)
+                & (OptimizationResult.created_at == latest.c.max_created_at),
+            )
+            .all()
+        )
 
 
 class AlertRepository:

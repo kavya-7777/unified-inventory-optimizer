@@ -1,11 +1,15 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, Upload } from 'lucide-react'
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api, ApiError } from '@/lib/api'
+import { PageHeader } from '@/components/ui/PageHeader'
+import { StatTile, StatTileGrid } from '@/components/ui/StatTile'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
+import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { FormRow, Input, Select } from '@/components/ui/Field'
+import { Input, Select } from '@/components/ui/Field'
+import { cn, formatNumber } from '@/lib/utils'
 import { EmptyState, ErrorNotice, Spinner } from '@/components/ui/Feedback'
 import type { DemandRecord } from '@/lib/types'
 
@@ -15,120 +19,176 @@ function useLocationsAndProducts() {
   return { locations, products }
 }
 
-function HistoryExplorer() {
+const PERIODS = [7, 14, 28, 56] as const
+
+function mean(values: number[]): number {
+  return values.length ? values.reduce((s, v) => s + v, 0) / values.length : 0
+}
+
+function stdDev(values: number[]): number {
+  if (values.length < 2) return 0
+  const m = mean(values)
+  return Math.sqrt(values.reduce((s, v) => s + (v - m) ** 2, 0) / values.length)
+}
+
+function DemandAnalytics() {
   const { locations, products } = useLocationsAndProducts()
   const [locationId, setLocationId] = useState('')
   const [productId, setProductId] = useState('')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [submitted, setSubmitted] = useState<{ location_id: string; product_id: string; start_date?: string; end_date?: string } | null>(null)
+  const [periodDays, setPeriodDays] = useState<(typeof PERIODS)[number]>(28)
+
+  const endDate = new Date()
+  const startDate = new Date(endDate.getTime() - periodDays * 86_400_000)
+  const iso = (d: Date) => d.toISOString().slice(0, 10)
 
   const history = useQuery({
-    queryKey: ['demand-history', submitted],
-    queryFn: () => api.getDemandHistory(submitted!),
-    enabled: !!submitted,
+    queryKey: ['demand-history', locationId, productId, periodDays],
+    queryFn: () => api.getDemandHistory({ location_id: locationId, product_id: productId, start_date: iso(startDate), end_date: iso(endDate) }),
+    enabled: !!locationId && !!productId,
   })
 
-  const chartData = useMemo(
-    () => (history.data ?? []).map((r) => ({ date: r.date, quantity: r.quantity })),
-    [history.data],
-  )
+  const quantities = useMemo(() => (history.data ?? []).map((r) => r.quantity), [history.data])
+  const stats = useMemo(() => {
+    const m = mean(quantities)
+    const sd = stdDev(quantities)
+    const zeroDays = quantities.filter((q) => q === 0).length
+    return {
+      mean: m,
+      stdDev: sd,
+      cv: m > 0 ? sd / m : null,
+      zeroDemandPct: quantities.length ? (zeroDays / quantities.length) * 100 : null,
+    }
+  }, [quantities])
+
+  // Classification badge (pattern/method) over the full selected window.
+  const classification = useQuery({
+    queryKey: ['forecast-classify', locationId, productId, periodDays, quantities.length],
+    queryFn: () => api.runForecast({ items: [{ id: 'selection', history: quantities }], horizon: 1 }),
+    enabled: quantities.length >= 4,
+  })
+
+  // Backtest for MAPE/bias: train on the first ~70%, forecast the rest, compare to actual.
+  const splitIdx = Math.floor(quantities.length * 0.7)
+  const train = quantities.slice(0, splitIdx)
+  const test = quantities.slice(splitIdx)
+  const backtest = useQuery({
+    queryKey: ['forecast-backtest', locationId, productId, periodDays, quantities.length],
+    queryFn: () => api.runForecast({ items: [{ id: 'selection', history: train }], horizon: test.length }),
+    enabled: quantities.length >= 8 && test.length > 0,
+  })
+
+  const accuracy = useMemo(() => {
+    const forecast = backtest.data?.forecasts[0]?.forecast
+    if (!forecast || forecast.length !== test.length) return { mape: null as number | null, bias: null as number | null }
+    const pairs = test.map((actual, i) => ({ actual, forecast: forecast[i] })).filter((p) => p.actual > 0)
+    if (pairs.length === 0) return { mape: null, bias: null }
+    const mape = mean(pairs.map((p) => Math.abs(p.actual - p.forecast) / p.actual)) * 100
+    const bias = mean(pairs.map((p) => (p.forecast - p.actual) / p.actual)) * 100
+    return { mape, bias }
+  }, [backtest.data, test])
+
+  const chartData = useMemo(() => {
+    const rows = (history.data ?? []).map((r, i) => ({ date: r.date, actual: r.quantity, forecast: undefined as number | undefined, isTest: i >= splitIdx }))
+    const forecastValues = backtest.data?.forecasts[0]?.forecast
+    if (forecastValues) {
+      rows.forEach((row, i) => {
+        if (i >= splitIdx) row.forecast = forecastValues[i - splitIdx]
+      })
+    }
+    return rows
+  }, [history.data, backtest.data, splitIdx])
+
+  const pattern = classification.data?.forecasts[0]?.pattern
+  const method = classification.data?.forecasts[0]?.method
 
   return (
-    <Card>
-      <CardHeader title="Demand history" description="Query historical demand for a location/product pair" />
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        eyebrow="Signal"
+        title="Demand & forecast"
+        description="Demand history drives pattern classification, which selects the forecast method: Holt-DES for smooth series, SES for erratic, Croston-SBA for intermittent and lumpy."
+        badges={
+          <>
+            {method && <Badge tone="brand">{method.toUpperCase()}</Badge>}
+            {pattern && pattern !== 'INSUFFICIENT_DATA' && <Badge tone="neutral">{pattern.toUpperCase()}</Badge>}
+          </>
+        }
+      />
+      <Card>
       <CardBody>
-        <form
-          className="grid grid-cols-1 gap-3 sm:grid-cols-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (!locationId || !productId) return
-            setSubmitted({
-              location_id: locationId,
-              product_id: productId,
-              start_date: startDate || undefined,
-              end_date: endDate || undefined,
-            })
-          }}
-        >
-          <FormRow label="Location">
-            <Select value={locationId} onChange={(e) => setLocationId(e.target.value)} required>
-              <option value="">Select location…</option>
-              {locations.data?.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </Select>
-          </FormRow>
-          <FormRow label="Product">
-            <Select value={productId} onChange={(e) => setProductId(e.target.value)} required>
-              <option value="">Select product…</option>
-              {products.data?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </Select>
-          </FormRow>
-          <FormRow label="Start date" hint="optional">
-            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          </FormRow>
-          <FormRow label="End date" hint="optional">
-            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-          </FormRow>
-          <div className="sm:col-span-4">
-            <Button type="submit" loading={history.isFetching}>
-              Fetch history
-            </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Select className="w-56" value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+            <option value="">Select location…</option>
+            {locations.data?.map((l) => (
+              <option key={l.id} value={l.id}>{l.name}</option>
+            ))}
+          </Select>
+          <Select className="w-56" value={productId} onChange={(e) => setProductId(e.target.value)}>
+            <option value="">Select SKU…</option>
+            {products.data?.map((p) => (
+              <option key={p.id} value={p.id}>{p.sku ? `${p.sku} — ${p.name}` : p.name}</option>
+            ))}
+          </Select>
+          <div className="flex gap-1 rounded-lg border border-border p-1">
+            {PERIODS.map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriodDays(p)}
+                className={cn(
+                  'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  periodDays === p ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100',
+                )}
+              >
+                {p}d
+              </button>
+            ))}
           </div>
-        </form>
+        </div>
 
         <div className="mt-5">
-          {!submitted && (
-            <EmptyState title="Choose a location and product" description="Results will appear as a chart and table below." />
-          )}
-          {history.isLoading && submitted && <Spinner />}
-          {history.isError && <ErrorNotice message={(history.error as Error).message} />}
-          {history.data && history.data.length === 0 && (
-            <EmptyState title="No demand history" description="No records for this location/product/date range." />
-          )}
-          {history.data && history.data.length > 0 && (
+          {!locationId || !productId ? (
+            <EmptyState title="Choose a location and SKU" description="Stats and a history/forecast chart will appear here." />
+          ) : history.isLoading ? (
+            <Spinner />
+          ) : history.isError ? (
+            <ErrorNotice message={history.error instanceof ApiError ? history.error.message : 'Failed to load demand history'} />
+          ) : history.data && history.data.length === 0 ? (
+            <EmptyState title="No demand history" description="No records for this location/SKU/period." />
+          ) : (
             <>
-              <div className="h-64 w-full">
+              <StatTileGrid>
+                <StatTile label={`Mean (${periodDays}d)`} value={formatNumber(stats.mean, 1)} unit="u/day" />
+                <StatTile label={`Std dev (${periodDays}d)`} value={formatNumber(stats.stdDev, 1)} unit="u" />
+                <StatTile label="CV" value={stats.cv != null ? formatNumber(stats.cv, 2) : '—'} />
+                <StatTile label="Zero-demand days" value={stats.zeroDemandPct != null ? formatNumber(stats.zeroDemandPct, 0) : '—'} unit="%" />
+                <StatTile
+                  label="MAPE"
+                  value={accuracy.mape != null ? formatNumber(accuracy.mape, 1) : '—'}
+                  unit="%"
+                  caption={accuracy.bias != null ? `bias ${accuracy.bias >= 0 ? '+' : ''}${formatNumber(accuracy.bias, 1)}%` : undefined}
+                  tone={accuracy.mape != null && accuracy.mape > 50 ? 'warn' : 'default'}
+                />
+              </StatTileGrid>
+
+              <div className="mt-5 h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <Tooltip />
-                    <Line type="monotone" dataKey="quantity" stroke="#4f46e5" strokeWidth={2} dot={false} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Line type="monotone" dataKey="actual" name="Actual" stroke="#4f46e5" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="forecast" name="Forecast (backtest)" stroke="#d97706" strokeWidth={2} strokeDasharray="4 3" dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
-              </div>
-              <div className="mt-4 max-h-64 overflow-y-auto rounded-lg border border-border">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-white">
-                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
-                      <th className="px-4 py-2 font-medium">Date</th>
-                      <th className="px-4 py-2 font-medium">Quantity</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {history.data.map((r) => (
-                      <tr key={r.id} className="border-b border-border last:border-0">
-                        <td className="px-4 py-1.5">{r.date}</td>
-                        <td className="px-4 py-1.5">{r.quantity}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
             </>
           )}
         </div>
       </CardBody>
-    </Card>
+      </Card>
+    </div>
   )
 }
 
@@ -246,11 +306,7 @@ function IngestForm() {
 export function DemandPage() {
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Demand</h1>
-        <p className="mt-1 text-sm text-muted">Explore historical demand and ingest new records.</p>
-      </div>
-      <HistoryExplorer />
+      <DemandAnalytics />
       <IngestForm />
     </div>
   )
