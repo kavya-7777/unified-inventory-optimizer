@@ -12,7 +12,7 @@ from sqlalchemy import text
 import time
 
 from app.core.config import settings
-from app.api.v1 import inventory, optimization, demand
+from app.api.v1 import inventory, optimization, demand, policies, dashboard, transportation
 
 logging.basicConfig(level=settings.LOG_LEVEL)
 log = logging.getLogger(__name__)
@@ -66,6 +66,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 app.include_router(inventory.router)
 app.include_router(optimization.router)
 app.include_router(demand.router)
+app.include_router(policies.router)
+app.include_router(dashboard.router)
+app.include_router(transportation.router)
 
 
 # ─── Health ──────────────────────────────────────────────────────────────────

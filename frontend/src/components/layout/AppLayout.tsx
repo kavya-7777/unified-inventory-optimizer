@@ -8,16 +8,22 @@ import {
   LineChart as LineChartIcon,
   ListTree,
   Package,
+  SlidersHorizontal,
+  Truck,
+  Waypoints,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/network', label: 'Network', icon: Waypoints },
   { to: '/inventory', label: 'Inventory', icon: Package },
-  { to: '/demand', label: 'Demand', icon: LineChartIcon },
+  { to: '/demand', label: 'Demand & Forecast', icon: LineChartIcon },
   { to: '/optimization', label: 'Optimization', icon: Gauge },
+  { to: '/transportation', label: 'Transportation', icon: Truck },
   { to: '/runs', label: 'Pipeline Runs', icon: ListTree },
+  { to: '/policies', label: 'Policies', icon: SlidersHorizontal },
   { to: '/alerts', label: 'Alerts', icon: AlertTriangle },
 ]
 

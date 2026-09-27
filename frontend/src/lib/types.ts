@@ -173,6 +173,104 @@ export interface PipelineRunOut {
   error: string | null
 }
 
+// ---- Lanes ----
+
+export interface LaneOut {
+  id: string
+  source_id: string
+  source_name: string
+  source_type: string
+  source_region: string | null
+  target_id: string
+  target_name: string
+  target_type: string
+  target_region: string | null
+  transit_time: number
+  cost_per_unit: number
+  capacity: number | null
+  created_at: string | null
+}
+
+// ---- Policies ----
+
+export interface PolicyOut {
+  id: string
+  location_id: string
+  location_name: string
+  location_type: string
+  product_id: string
+  product_name: string
+  product_sku: string | null
+  service_level: number
+  min_s_out: number
+  max_s_out: number
+  holding_cost: number
+  ordering_cost: number
+  review_period: number
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface PolicyUpdate {
+  service_level?: number
+  min_s_out?: number
+  max_s_out?: number
+  holding_cost?: number
+  ordering_cost?: number
+  review_period?: number
+}
+
+// ---- Dashboard summary ----
+
+export interface LastRunOut {
+  id: string
+  status: string
+  solver: string | null
+  fallback_used: boolean
+  started_at: string
+}
+
+export interface DashboardSummaryOut {
+  inventory_value: number
+  avg_service_level: number | null
+  total_policies: number
+  fill_rate: number | null
+  at_risk_count: number
+  measured_pairs: number
+  open_alerts: number
+  last_run: LastRunOut | null
+}
+
+// ---- Transportation plan ----
+
+export interface LaneFlowOut {
+  lane_id: string
+  source_id: string
+  source_name: string
+  source_type: string
+  target_id: string
+  target_name: string
+  target_type: string
+  product_id: string
+  sku: string | null
+  product_name: string
+  quantity: number
+  capacity: number | null
+  utilization: number | null
+  transit_time: number | null
+  cost: number
+}
+
+export interface TransportationPlanOut {
+  status: string // "OPTIMAL" | "INFEASIBLE" | "NO_EDGES" | "NO_DEMAND_DATA"
+  message?: string | null
+  planned_units: number
+  total_cost: number
+  capacity_utilization: number | null
+  active_lanes: number
+  lane_flows: LaneFlowOut[]
+}
+
 // ---- Alerts ----
 
 export interface AlertOut {
