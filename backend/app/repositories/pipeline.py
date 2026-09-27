@@ -105,3 +105,20 @@ class AlertRepository:
 
     def get_unresolved(self) -> List[Alert]:
         return self.db.query(Alert).filter(Alert.resolved == False).all()
+
+    def get_recent(self, resolved: Optional[bool] = None, limit: int = 50) -> List[Alert]:
+        query = self.db.query(Alert)
+        if resolved is not None:
+            query = query.filter(Alert.resolved == resolved)
+        return query.order_by(Alert.created_at.desc()).limit(limit).all()
+
+    def get_by_id(self, alert_id: int) -> Optional[Alert]:
+        return self.db.query(Alert).filter(Alert.id == alert_id).first()
+
+    def resolve(self, alert_id: int) -> Optional[Alert]:
+        alert = self.get_by_id(alert_id)
+        if alert:
+            alert.resolved = True
+            self.db.commit()
+            self.db.refresh(alert)
+        return alert

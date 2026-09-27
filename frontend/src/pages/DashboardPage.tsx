@@ -1,16 +1,34 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Gauge, LineChart, ListTree, Package } from 'lucide-react'
+import { AlertTriangle, Gauge, LineChart, ListTree, Package } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/Badge'
 import { ErrorNotice, Spinner } from '@/components/ui/Feedback'
 import { formatDateTime, formatDuration } from '@/lib/utils'
 
-function StatCard({ label, value, icon: Icon, to }: { label: string; value: string; icon: typeof Package; to: string }) {
+function StatCard({
+  label,
+  value,
+  icon: Icon,
+  to,
+  tone = 'brand',
+}: {
+  label: string
+  value: string
+  icon: typeof Package
+  to: string
+  tone?: 'brand' | 'danger'
+}) {
   return (
     <Link to={to} className="card flex items-center gap-4 px-5 py-4 transition-shadow hover:shadow-sm">
-      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+      <div
+        className={cn(
+          'flex h-10 w-10 items-center justify-center rounded-lg',
+          tone === 'danger' ? 'bg-danger-50 text-danger-600' : 'bg-brand-50 text-brand-600',
+        )}
+      >
         <Icon className="h-5 w-5" />
       </div>
       <div>
@@ -25,6 +43,10 @@ export function DashboardPage() {
   const locations = useQuery({ queryKey: ['locations', 0, 100], queryFn: () => api.listLocations(0, 100) })
   const products = useQuery({ queryKey: ['products', 0, 100], queryFn: () => api.listProducts(0, 100) })
   const runs = useQuery({ queryKey: ['runs', 5], queryFn: () => api.listRuns(5) })
+  const alerts = useQuery({
+    queryKey: ['alerts', 'unresolved', 100],
+    queryFn: () => api.listAlerts({ resolved: false, limit: 100 }),
+  })
 
   const countLabel = (q: UseQueryResult<unknown[], Error>) =>
     q.isLoading ? '…' : q.isError ? '—' : `${q.data!.length}${q.data!.length === 100 ? '+' : ''}`
@@ -38,11 +60,18 @@ export function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard label="Locations" value={countLabel(locations)} icon={Package} to="/inventory" />
         <StatCard label="Products" value={countLabel(products)} icon={Package} to="/inventory" />
         <StatCard label="Demand history" value="Explore" icon={LineChart} to="/demand" />
         <StatCard label="Run optimization" value="GSM · Forecast · Pipeline" icon={Gauge} to="/optimization" />
+        <StatCard
+          label="Unresolved alerts"
+          value={countLabel(alerts)}
+          icon={AlertTriangle}
+          to="/alerts"
+          tone={alerts.data && alerts.data.length > 0 ? 'danger' : 'brand'}
+        />
       </div>
 
       <Card>

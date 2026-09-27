@@ -205,6 +205,25 @@ def test_ingest_demand():
     assert "inserted_count" in data
 
 
+def test_get_alerts_returns_list():
+    response = client.get("/api/v1/alerts")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+def test_get_alerts_filters_by_resolved():
+    response = client.get("/api/v1/alerts", params={"resolved": False})
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert all(not a["resolved"] for a in data)
+
+
+def test_resolve_alert_not_found():
+    response = client.post("/api/v1/alerts/999999999/resolve")
+    assert response.status_code == 404
+
+
 def test_get_demand_history():
     locs = client.get("/api/v1/locations").json()
     prods = client.get("/api/v1/products").json()

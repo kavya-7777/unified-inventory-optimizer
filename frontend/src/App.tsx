@@ -6,6 +6,7 @@ import { DemandPage } from '@/pages/DemandPage'
 import { OptimizationPage } from '@/pages/OptimizationPage'
 import { RunsPage } from '@/pages/RunsPage'
 import { RunDetailPage } from '@/pages/RunDetailPage'
+import { AlertsPage } from '@/pages/AlertsPage'
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
         <Route path="/optimization" element={<OptimizationPage />} />
         <Route path="/runs" element={<RunsPage />} />
         <Route path="/runs/:runId" element={<RunDetailPage />} />
+        <Route path="/alerts" element={<AlertsPage />} />
       </Route>
     </Routes>
   )

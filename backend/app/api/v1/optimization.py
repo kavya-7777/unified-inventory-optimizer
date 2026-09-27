@@ -1,10 +1,10 @@
 """API v1 router — Optimization and Pipeline runs."""
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.deps import get_db
-from app.repositories.pipeline import PipelineRunRepository
-from app.schemas.optimization import OptimizationRunRequest, OptimizationRunResponse, PipelineRunOut, ForecastRunRequest
+from app.repositories.pipeline import PipelineRunRepository, AlertRepository
+from app.schemas.optimization import OptimizationRunRequest, OptimizationRunResponse, PipelineRunOut, ForecastRunRequest, AlertOut
 from app.services.optimization import trigger_optimization
 from app.forecasting.runner import run_forecast_pipeline
 from app.services.pipeline import run_daily_pipeline
@@ -46,3 +46,21 @@ def get_run(run_id: str, db: Session = Depends(get_db)):
     if not run:
         raise HTTPException(status_code=404, detail="Pipeline run not found")
     return run
+
+
+@router.get("/alerts", response_model=List[AlertOut])
+def get_alerts(resolved: Optional[bool] = None, limit: int = 50, db: Session = Depends(get_db)):
+    """List alerts (e.g. CAPACITY_EXCEEDED, TRANSPORT_INFEASIBLE) raised by pipeline runs.
+
+    `resolved` filters to only resolved/unresolved alerts; omit it to get both,
+    most recent first.
+    """
+    return AlertRepository(db).get_recent(resolved=resolved, limit=limit)
+
+
+@router.post("/alerts/{alert_id}/resolve", response_model=AlertOut)
+def resolve_alert(alert_id: int, db: Session = Depends(get_db)):
+    alert = AlertRepository(db).resolve(alert_id)
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return alert
