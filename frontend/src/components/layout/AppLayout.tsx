@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
+  AlertTriangle,
   Boxes,
   Gauge,
   LayoutDashboard,
@@ -17,6 +18,7 @@ const nav = [
   { to: '/demand', label: 'Demand', icon: LineChartIcon },
   { to: '/optimization', label: 'Optimization', icon: Gauge },
   { to: '/runs', label: 'Pipeline Runs', icon: ListTree },
+  { to: '/alerts', label: 'Alerts', icon: AlertTriangle },
 ]
 
 function HealthPill() {
