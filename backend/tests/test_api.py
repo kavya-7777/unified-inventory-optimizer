@@ -205,6 +205,72 @@ def test_ingest_demand():
     assert "inserted_count" in data
 
 
+def test_get_lanes_returns_list():
+    response = client.get("/api/v1/lanes")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+def test_get_policies_returns_list():
+    response = client.get("/api/v1/policies")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+def test_update_policy_not_found():
+    response = client.patch("/api/v1/policies/does-not-exist", json={"service_level": 0.9})
+    assert response.status_code == 404
+
+
+def test_dashboard_summary_shape():
+    response = client.get("/api/v1/dashboard/summary")
+    assert response.status_code == 200
+    data = response.json()
+    for key in ("inventory_value", "total_policies", "at_risk_count", "measured_pairs", "open_alerts"):
+        assert key in data
+
+
+def test_transportation_plan_no_lanes_seeded_is_handled():
+    """Whatever the DB's actual lane data, the endpoint must always return one of
+    the documented statuses (never a 500) and never raise."""
+    response = client.get("/api/v1/transportation/plan")
+    assert response.status_code == 200
+    assert response.json()["status"] in ("OPTIMAL", "INFEASIBLE", "NO_EDGES", "NO_DEMAND_DATA")
+
+
+def test_get_alerts_returns_list():
+    response = client.get("/api/v1/alerts")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+def test_get_alerts_filters_by_resolved():
+    response = client.get("/api/v1/alerts", params={"resolved": False})
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert all(not a["resolved"] for a in data)
+
+
+def test_resolve_alert_not_found():
+    response = client.post("/api/v1/alerts/999999999/resolve")
+    assert response.status_code == 404
+
+
+def test_demand_history_out_coerces_datetime_rows():
+    """DemandHistory.date is a DB DateTime column; DemandHistoryOut.date is a strict
+    `date`. A row written with a real time-of-day (not just midnight) must not break
+    serialization — regression test for a bug where it 500'd the whole response."""
+    from datetime import datetime
+    from app.schemas.demand import DemandHistoryOut
+
+    out = DemandHistoryOut.model_validate({
+        "id": 1, "location_id": "L1", "product_id": "P1",
+        "date": datetime(2024, 1, 15, 8, 30, 45), "quantity": 10.0,
+    })
+    assert out.date.isoformat() == "2024-01-15"
+
+
 def test_get_demand_history():
     locs = client.get("/api/v1/locations").json()
     prods = client.get("/api/v1/products").json()

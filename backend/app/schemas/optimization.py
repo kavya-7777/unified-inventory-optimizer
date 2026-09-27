@@ -84,6 +84,9 @@ class ForecastRunRequest(BaseModel):
 
 class AlertOut(BaseModel):
     id: int
+    pipeline_run_id: Optional[str] = None
+    location_id: Optional[str] = None
+    product_id: Optional[str] = None
     alert_type: str
     severity: str
     message: str
