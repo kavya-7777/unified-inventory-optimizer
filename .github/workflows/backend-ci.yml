@@ -35,10 +35,7 @@ jobs:
     - name: Type checking with mypy
       run: |
         mypy app/
-      continue-on-error: true # For v1, typing can be gradual
-        
+
     - name: Test with pytest
-      env:
-        DATABASE_URL: sqlite:///./test.db # Use sqlite for simple CI or spin up postgres service
       run: |
         pytest

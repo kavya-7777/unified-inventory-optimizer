@@ -1,6 +1,7 @@
 """Pydantic schemas for inventory domain (request/response contracts)."""
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional
+
 from pydantic import BaseModel
 
 

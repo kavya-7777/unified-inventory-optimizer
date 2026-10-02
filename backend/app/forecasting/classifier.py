@@ -3,9 +3,10 @@ Demand Classifier.
 Classifies a demand series into an inventory demand pattern,
 which determines which forecasting model is most appropriate.
 """
-import numpy as np
 from enum import Enum
 from typing import List
+
+import numpy as np
 
 
 class DemandPattern(str, Enum):
@@ -17,7 +18,8 @@ class DemandPattern(str, Enum):
 
 def classify_demand(history: List[float]) -> DemandPattern:
     """
-    Classifies demand using ADI (Average Demand Interval) and CV² (Squared Coefficient of Variation).
+    Classifies demand using ADI (Average Demand Interval) and CV² (squared coefficient
+    of variation of non-zero demand sizes).
     
     ADI < 1.32 and CV² < 0.49 → Smooth
     ADI >= 1.32 and CV² < 0.49 → Intermittent
@@ -34,12 +36,12 @@ def classify_demand(history: List[float]) -> DemandPattern:
         return DemandPattern.INTERMITTENT
 
     # ADI: average interval between non-zero demands
-    adi = len(arr) / max(len(nonzero), 1)
+    adi = len(arr) / len(nonzero)
 
     # CV²: squared coefficient of variation of non-zero demands
     mean_nz = np.mean(nonzero)
     std_nz = np.std(nonzero)
-    cv2 = (std_nz / mean_nz) ** 2 if mean_nz > 0 else 0.0
+    cv2 = (std_nz / mean_nz) ** 2
 
     if adi < 1.32 and cv2 < 0.49:
         return DemandPattern.SMOOTH

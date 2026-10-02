@@ -30,6 +30,7 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS}
       - LOG_LEVEL=WARNING
       - OPTIMIZATION_TIMEOUT_SECONDS=60
+      - API_KEY=${API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

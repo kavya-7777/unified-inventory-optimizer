@@ -1,9 +1,11 @@
-"""Database dependency injection — shared across all API routers."""
+from typing import Iterator
+
+from sqlalchemy.orm import Session
+
 from app.db.session import SessionLocal
 
 
-def get_db():
-    """FastAPI dependency that yields a SQLAlchemy session and ensures it is closed."""
+def get_db() -> Iterator[Session]:
     db = SessionLocal()
     try:
         yield db

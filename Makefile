@@ -33,8 +33,11 @@ seed: ## Seed database with initial data
 generate-data: ## Generate synthetic test data locally
 	python3 scripts/generate_data.py --size medium
 
-run: ## Run pipeline script
-	.venv/bin/python scripts/run_pipeline.py
+run: ## Trigger an end-to-end pipeline run on the local backend
+	curl -sS -X POST http://localhost:8000/api/v1/pipeline/run \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $${API_KEY}" \
+		-d '{"run_type": "manual"}'
 
 docker-up: ## Start local docker environment
 	docker compose up -d

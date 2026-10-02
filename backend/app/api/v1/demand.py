@@ -1,32 +1,30 @@
 """API v1 router — Demand Ingestion and Retrieval."""
-from typing import List, Optional
 from datetime import date
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.security import require_api_key
 from app.db.deps import get_db
 from app.repositories.demand import DemandRepository
-from app.schemas.demand import DemandIngestRequest, DemandIngestResponse, DemandHistoryOut
+from app.schemas.demand import DemandHistoryOut, DemandIngestRequest, DemandIngestResponse
 
 router = APIRouter(prefix="/api/v1/demand", tags=["demand"])
 
 
-@router.post("/ingest", response_model=DemandIngestResponse)
+@router.post(
+    "/ingest",
+    response_model=DemandIngestResponse,
+    dependencies=[Depends(require_api_key)],
+)
 def ingest_demand(payload: DemandIngestRequest, db: Session = Depends(get_db)):
     """
     Ingest a batch of historical demand records.
-    Uses an upsert mechanism (overwrites quantity if location+product+date already exists).
+    Existing (location, product, date) rows have their quantity overwritten.
     """
-    repo = DemandRepository(db)
-    
-    # Convert Pydantic models to dicts for bulk insert
     records = [record.model_dump() for record in payload.records]
-    
-    try:
-        result = repo.upsert_bulk(records)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to ingest demand: {str(e)}")
+    return DemandRepository(db).upsert_bulk(records)
 
 
 @router.get("/history", response_model=List[DemandHistoryOut])
@@ -35,16 +33,14 @@ def get_demand_history(
     product_id: str,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    Fetch demand history time series for a specific location and product.
-    Ordered chronologically.
-    """
-    repo = DemandRepository(db)
-    return repo.get_history(
-        location_id=location_id, 
-        product_id=product_id, 
-        start_date=start_date, 
-        end_date=end_date
+    """Demand history time series for a location and product, ordered chronologically."""
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=422, detail="start_date must be on or before end_date")
+    return DemandRepository(db).get_history(
+        location_id=location_id,
+        product_id=product_id,
+        start_date=start_date,
+        end_date=end_date,
     )

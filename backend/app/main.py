@@ -2,17 +2,20 @@
 MEIO Platform — FastAPI Application Entry Point.
 """
 import logging
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+import time
+
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
-import time
+from sqlalchemy.orm import Session
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.api.v1 import demand, inventory, optimization
 from app.core.config import settings
-from app.api.v1 import inventory, optimization, demand
+from app.db.deps import get_db
 
 logging.basicConfig(level=settings.LOG_LEVEL)
 log = logging.getLogger(__name__)
@@ -23,7 +26,6 @@ app = FastAPI(
     description="Multi-Echelon Inventory Optimization Platform",
 )
 
-# ─── CORS ────────────────────────────────────────────────────────────────────
 origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
@@ -34,53 +36,56 @@ app.add_middleware(
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        start_time = time.time()
+        start_time = time.perf_counter()
         response = await call_next(request)
-        process_time = time.time() - start_time
-        log.info(f"{request.method} {request.url.path} - {response.status_code} - {process_time:.4f}s")
+        elapsed = time.perf_counter() - start_time
+        log.info(f"{request.method} {request.url.path} - {response.status_code} - {elapsed:.4f}s")
         return response
+
 
 app.add_middleware(RequestLoggingMiddleware)
 
-# ─── Exception Handlers ──────────────────────────────────────────────────────
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    log.error(f"Unhandled Exception: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal Server Error", "message": str(exc)}
-    )
+    log.error(f"Unhandled exception on {request.method} {request.url.path}", exc_info=exc)
+    content = {"detail": "Internal Server Error"}
+    if settings.DEBUG:
+        content["message"] = str(exc)
+    return JSONResponse(status_code=500, content=content)
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    log.warning(f"Validation Error: {exc}")
+    log.warning(f"Validation error on {request.url.path}: {exc.errors()}")
     return JSONResponse(
         status_code=422,
-        content={"detail": "Validation Error", "errors": exc.errors()}
+        content={"detail": "Validation Error", "errors": jsonable_errors(exc)},
     )
 
 
-# ─── Routers ─────────────────────────────────────────────────────────────────
+def jsonable_errors(exc: RequestValidationError) -> list:
+    return [{k: v for k, v in err.items() if k != "ctx"} for err in exc.errors()]
+
+
 app.include_router(inventory.router)
 app.include_router(optimization.router)
 app.include_router(demand.router)
 
 
-# ─── Health ──────────────────────────────────────────────────────────────────
 @app.get("/health", tags=["health"])
 def health_check():
     return {"status": "ok"}
 
 
 @app.get("/health/ready", tags=["health"])
-def health_ready():
+def health_ready(db: Session = Depends(get_db)):
     try:
-        from app.db.session import engine
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
+        db.execute(text("SELECT 1"))
         return {"status": "ready"}
-    except Exception as e:
-        log.error(f"Health check failed: {e}")
-        return {"status": "unhealthy", "detail": str(e)}
+    except Exception:
+        log.exception("Readiness check failed")
+        return JSONResponse(status_code=503, content={"status": "unhealthy"})

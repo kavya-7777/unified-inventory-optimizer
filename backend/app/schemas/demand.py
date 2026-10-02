@@ -1,7 +1,8 @@
 """Schemas for Demand History Ingestion and Retrieval."""
-from datetime import date
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from datetime import date, datetime
+from typing import List
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class DemandRecord(BaseModel):
@@ -12,7 +13,7 @@ class DemandRecord(BaseModel):
 
 
 class DemandIngestRequest(BaseModel):
-    records: List[DemandRecord]
+    records: List[DemandRecord] = Field(max_length=100_000)
 
 
 class DemandIngestResponse(BaseModel):
@@ -30,3 +31,8 @@ class DemandHistoryOut(BaseModel):
     quantity: float
 
     model_config = {"from_attributes": True}
+
+    @field_validator("date", mode="before")
+    @classmethod
+    def strip_time(cls, v):
+        return v.date() if isinstance(v, datetime) else v

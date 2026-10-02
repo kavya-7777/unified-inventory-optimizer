@@ -1,56 +1,110 @@
 """Repository: Data access layer for demand history."""
-from datetime import date
-from typing import List
+from datetime import date, datetime, time
+from typing import Dict, List, Optional, Set, Tuple
+
+from sqlalchemy import select, tuple_
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import insert
-from app.models.inventory import DemandHistory
+
+from app.models.inventory import DemandHistory, Location, Product
+
+BATCH_SIZE = 1000
+
+Key = Tuple[str, str, datetime]
+
+
+def _as_datetime(d) -> datetime:
+    return d if isinstance(d, datetime) else datetime.combine(d, time.min)
 
 
 class DemandRepository:
     def __init__(self, db: Session):
         self.db = db
 
+    def _insert(self):
+        dialect = self.db.get_bind().dialect.name
+        if dialect == "postgresql":
+            return postgresql.insert(DemandHistory)
+        if dialect == "sqlite":
+            return sqlite.insert(DemandHistory)
+        raise NotImplementedError(f"Upsert not supported for dialect '{dialect}'")
+
+    def _existing_keys(self, keys: List[Key]) -> set:
+        found: Set[Key] = set()
+        cols = (DemandHistory.location_id, DemandHistory.product_id, DemandHistory.date)
+        for i in range(0, len(keys), BATCH_SIZE):
+            chunk = keys[i:i + BATCH_SIZE]
+            rows = self.db.execute(select(*cols).where(tuple_(*cols).in_(chunk))).all()
+            found.update((r[0], r[1], r[2]) for r in rows)
+        return found
+
+    def _unknown_ids(self, model, ids: set) -> set:
+        known = set(self.db.scalars(select(model.id).where(model.id.in_(ids))))
+        return ids - known
+
     def upsert_bulk(self, records: List[dict]) -> dict:
         """
-        Upsert demand history records using PostgreSQL ON CONFLICT DO UPDATE.
-        Expects a list of dicts: {"location_id": "...", "product_id": "...", "date": "...", "quantity": ...}
+        Insert or update demand rows keyed on (location_id, product_id, date).
+        Rows referencing unknown locations/products are ignored and reported.
+        Duplicate keys within the payload resolve to the last occurrence.
         """
         if not records:
             return {"inserted_count": 0, "updated_count": 0, "ignored_count": 0, "errors": []}
 
-        total_processed = 0
-        batch_size = 1000
-        for i in range(0, len(records), batch_size):
-            batch = records[i:i + batch_size]
-            # PostgreSQL upsert (insert or update on conflict)
-            stmt = insert(DemandHistory).values(batch)
-            
-            # On conflict (location_id, product_id, date), update the quantity
-            update_stmt = stmt.on_conflict_do_update(
-                index_elements=['location_id', 'product_id', 'date'],
-                set_=dict(quantity=stmt.excluded.quantity)
-            )
-            
-            result = self.db.execute(update_stmt)
-            total_processed += result.rowcount
+        deduped: Dict[Key, dict] = {}
+        for r in records:
+            row = {**r, "date": _as_datetime(r["date"])}
+            deduped[(row["location_id"], row["product_id"], row["date"])] = row
 
-        self.db.commit()
-        
+        bad_locs = self._unknown_ids(Location, {k[0] for k in deduped})
+        bad_prods = self._unknown_ids(Product, {k[1] for k in deduped})
+        errors = [f"Unknown location_id '{x}'" for x in sorted(bad_locs)]
+        errors += [f"Unknown product_id '{x}'" for x in sorted(bad_prods)]
+
+        valid = {k: v for k, v in deduped.items() if k[0] not in bad_locs and k[1] not in bad_prods}
+        ignored = len(records) - len(valid)
+        if not valid:
+            return {"inserted_count": 0, "updated_count": 0, "ignored_count": ignored,
+                    "errors": errors}
+
+        keys = list(valid)
+        existing = self._existing_keys(keys)
+        rows = list(valid.values())
+
+        try:
+            for i in range(0, len(rows), BATCH_SIZE):
+                stmt = self._insert().values(rows[i:i + BATCH_SIZE])
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["location_id", "product_id", "date"],
+                    set_={"quantity": stmt.excluded.quantity},
+                )
+                self.db.execute(stmt)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
+        updated = sum(1 for k in keys if k in existing)
         return {
-            "inserted_count": result.rowcount,
-            "updated_count": 0,  # Rowcount handles both for this driver mostly
-            "ignored_count": 0,
-            "errors": []
+            "inserted_count": len(keys) - updated,
+            "updated_count": updated,
+            "ignored_count": ignored,
+            "errors": errors,
         }
 
-    def get_history(self, location_id: str, product_id: str, start_date: date = None, end_date: date = None) -> List[DemandHistory]:
+    def get_history(
+        self,
+        location_id: str,
+        product_id: str,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> List[DemandHistory]:
         query = self.db.query(DemandHistory).filter(
             DemandHistory.location_id == location_id,
-            DemandHistory.product_id == product_id
+            DemandHistory.product_id == product_id,
         )
         if start_date:
-            query = query.filter(DemandHistory.date >= start_date)
+            query = query.filter(DemandHistory.date >= _as_datetime(start_date))
         if end_date:
-            query = query.filter(DemandHistory.date <= end_date)
-            
+            query = query.filter(DemandHistory.date <= _as_datetime(end_date))
         return query.order_by(DemandHistory.date.asc()).all()

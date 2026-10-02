@@ -2,10 +2,12 @@
 Exponential Smoothing (ETS) Forecaster.
 Used for smooth/erratic demand patterns.
 """
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 
-def simple_exponential_smoothing(history: List[float], alpha: float = 0.3, horizon: int = 4) -> Dict[str, Any]:
+def simple_exponential_smoothing(
+    history: List[float], alpha: float = 0.3, horizon: int = 4
+) -> Dict[str, Any]:
     """
     Single Exponential Smoothing (SES / Simple ETS).
     Works well for smooth demand with no trend or seasonality.
@@ -14,7 +16,7 @@ def simple_exponential_smoothing(history: List[float], alpha: float = 0.3, horiz
     Forecast = last smoothed value (constant forecast)
     """
     if not history:
-        return {"forecast": [], "fitted": [], "alpha": alpha}
+        return {"forecast": [], "fitted": [], "alpha": alpha, "method": "SES"}
 
     smoothed = [history[0]]
     for i in range(1, len(history)):
@@ -48,19 +50,17 @@ def double_exponential_smoothing(
     trend = [history[1] - history[0]]
 
     for i in range(1, len(history)):
-        l = alpha * history[i] + (1 - alpha) * (level[-1] + trend[-1])
-        t = beta * (l - level[-1]) + (1 - beta) * trend[-1]
-        level.append(l)
-        trend.append(t)
+        lvl = alpha * history[i] + (1 - alpha) * (level[-1] + trend[-1])
+        trd = beta * (lvl - level[-1]) + (1 - beta) * trend[-1]
+        level.append(lvl)
+        trend.append(trd)
 
-    forecast = []
-    for h in range(1, horizon + 1):
-        forecast.append(level[-1] + h * trend[-1])
+    forecast = [max(0.0, level[-1] + h * trend[-1]) for h in range(1, horizon + 1)]
 
     return {
         "forecast": [round(f, 2) for f in forecast],
-        "level": [round(l, 2) for l in level],
-        "trend": [round(t, 2) for t in trend],
+        "level": [round(v, 2) for v in level],
+        "trend": [round(v, 2) for v in trend],
         "alpha": alpha,
         "beta": beta,
         "method": "Holt-DES",

@@ -1,121 +1,97 @@
-from ortools.sat.python import cp_model
-from typing import List, Dict, Any
 import math
+from typing import Any, Dict, List
+
+from ortools.sat.python import cp_model
+
+from app.optimization.gsm import GSMNetwork
+from app.optimization.service_time import get_z_score
+
+COST_SCALE = 1000
+
 
 def calculate_precomputed_ss_costs(
-    max_time: int, 
-    demand_std: float, 
-    holding_cost: float, 
-    service_factor: float = 1.645
+    max_time: int,
+    demand_std: float,
+    holding_cost: float,
+    service_factor: float = 1.645,
 ) -> List[int]:
     """
-    CP-SAT only works with integers. Safety stock is proportional to sqrt(Time).
-    We pre-calculate the safety stock cost for every possible net replenishment time T (0 to max_time).
-    Returns an array where index is T, and value is the scaled integer cost.
+    CP-SAT only works with integers. Safety stock is proportional to sqrt(T), so the
+    scaled holding cost is pre-computed for every net replenishment time T in [0, max_time].
     """
-    costs = []
-    scaling_factor = 1000  # Scale up to preserve precision in integer math
-    for t in range(max_time + 1):
-        if t == 0:
-            costs.append(0)
-        else:
-            # SS = z * sqrt(T) * demand_std
-            ss = service_factor * math.sqrt(t) * demand_std
-            cost = ss * holding_cost
-            costs.append(int(cost * scaling_factor))
-    return costs
+    return [
+        int(round(service_factor * math.sqrt(t) * demand_std * holding_cost * COST_SCALE))
+        for t in range(max_time + 1)
+    ]
+
 
 def run_gsm_solver(
-    nodes: List[Dict[str, Any]],
-    edges: List[Dict[str, Any]],
+    network: GSMNetwork,
     max_time: int = 30,
     timeout_seconds: float = 60.0,
 ) -> Dict[str, Any]:
     """
     Guaranteed Service Model (GSM) using Google OR-Tools CP-SAT.
-    Optimizes safety stock placement across a supply chain network.
-    
-    nodes format: [{"id": "DC1", "type": "DC", "processing_time": 1, "demand_std": 10, "holding_cost": 5, "max_s_out": 5}]
-    edges format: [{"source": "Supplier", "target": "DC1", "transit_time": 2}]
+    Chooses outbound service times that minimise total safety stock holding cost.
     """
     model = cp_model.CpModel()
-    
-    # Compute a safe upper bound for net_time = max_time + max processing time in network
-    max_processing = max((n.get("processing_time", 0) for n in nodes), default=0)
+
+    max_processing = max((n.processing_time for n in network.nodes), default=0)
     net_time_ub = max_time + max_processing
 
-    # 1. Variables
-    s_in = {}
-    s_out = {}
-    net_time = {}
-    cost_vars = {}
-    
-    total_cost_vars = []
-    
-    for node in nodes:
-        n_id = node["id"]
-        
-        # Service times (in days)
-        s_in[n_id] = model.NewIntVar(0, max_time, f's_in_{n_id}')
-        s_out[n_id] = model.NewIntVar(0, node.get("max_s_out", max_time), f's_out_{n_id}')
-        
-        # Net Replenishment Time: T = S_in + ProcessingTime - S_out
-        # Upper bound uses net_time_ub to avoid infeasibility on long chains
-        net_time[n_id] = model.NewIntVar(0, net_time_ub, f'net_time_{n_id}')
-        p_time = node.get("processing_time", 0)
-        model.Add(net_time[n_id] == s_in[n_id] + p_time - s_out[n_id])
-        
-        # Precompute costs mapped to net_time
+    s_in: Dict[str, Any] = {}
+    s_out: Dict[str, Any] = {}
+    net_time: Dict[str, Any] = {}
+    cost: Dict[str, Any] = {}
+
+    for node in network.nodes:
+        n_id = node.id
+        s_in[n_id] = model.new_int_var(0, max_time, f"s_in_{n_id}")
+        s_out_ub = max(node.min_s_out, min(node.max_s_out, net_time_ub))
+        s_out[n_id] = model.new_int_var(node.min_s_out, s_out_ub, f"s_out_{n_id}")
+        net_time[n_id] = model.new_int_var(0, net_time_ub, f"net_time_{n_id}")
+        model.add(net_time[n_id] == s_in[n_id] + node.processing_time - s_out[n_id])
+
+        z = get_z_score(node.service_level)
         cost_array = calculate_precomputed_ss_costs(
-            net_time_ub, 
-            node.get("demand_std", 0.0), 
-            node.get("holding_cost", 0.0)
+            net_time_ub, node.demand_std, node.holding_cost, z
         )
-        cost_vars[n_id] = model.NewIntVar(0, max(cost_array) if cost_array else 0, f'cost_{n_id}')
-        model.AddElement(net_time[n_id], cost_array, cost_vars[n_id])
-        
-        total_cost_vars.append(cost_vars[n_id])
+        cost[n_id] = model.new_int_var(0, max(cost_array), f"cost_{n_id}")
+        model.add_element(net_time[n_id], cost_array, cost[n_id])
 
-    # 2. Network Constraints (Edges)
-    for edge in edges:
-        src = edge["source"]
-        tgt = edge["target"]
-        t_time = edge.get("transit_time", 0)
-        
-        if src in s_out and tgt in s_in:
-            # S_in(Target) = S_out(Source) + TransitTime
-            model.Add(s_in[tgt] == s_out[src] + t_time)
-            
-    # For nodes with no incoming edges (e.g. root suppliers), fix S_in = 0
-    targets = {e["target"] for e in edges}
-    for n_id in s_in:
-        if n_id not in targets:
-            model.Add(s_in[n_id] == 0)
+    for node in network.nodes:
+        preds = network.predecessors(node.id)
+        if not preds:
+            model.add(s_in[node.id] == 0)
+            continue
+        arrivals = []
+        for p in preds:
+            arrival = model.new_int_var(0, net_time_ub + max_time, f"arr_{p}_{node.id}")
+            model.add(arrival == s_out[p] + network.transit_time(p, node.id))
+            arrivals.append(arrival)
+        model.add_max_equality(s_in[node.id], arrivals)
 
-    # 3. Objective: Minimize total safety stock cost
-    model.Minimize(sum(total_cost_vars))
-    
-    # 4. Solve — use configured timeout
+    model.minimize(sum(cost.values()))
+
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = timeout_seconds
-    status = solver.Solve(model)
-    
-    # 5. Extract Results
-    results = {}
-    if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-        for node in nodes:
-            n_id = node["id"]
-            results[n_id] = {
-                "s_in": solver.Value(s_in[n_id]),
-                "s_out": solver.Value(s_out[n_id]),
-                "net_replenishment_time": solver.Value(net_time[n_id]),
-                "safety_stock_cost": solver.Value(cost_vars[n_id]) / 1000.0
-            }
-            
-    return {
-        "status": solver.StatusName(status),
-        "objective_value": solver.ObjectiveValue() / 1000.0 if status in (cp_model.OPTIMAL, cp_model.FEASIBLE) else None,
-        "wall_time": solver.WallTime(),
-        "nodes": results
-    }
+    status = solver.solve(model)
+    solved = status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
 
+    results = {}
+    if solved:
+        for node in network.nodes:
+            n_id = node.id
+            results[n_id] = {
+                "s_in": solver.value(s_in[n_id]),
+                "s_out": solver.value(s_out[n_id]),
+                "net_replenishment_time": solver.value(net_time[n_id]),
+                "safety_stock_cost": solver.value(cost[n_id]) / COST_SCALE,
+            }
+
+    return {
+        "status": solver.status_name(status),
+        "objective_value": solver.objective_value / COST_SCALE if solved else None,
+        "wall_time": solver.wall_time,
+        "nodes": results,
+    }

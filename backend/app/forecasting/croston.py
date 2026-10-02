@@ -2,7 +2,7 @@
 Croston's Method for Intermittent and Lumpy Demand Forecasting.
 Splits the forecasting into demand size and demand interval components.
 """
-from typing import List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 
 def croston(
@@ -14,32 +14,26 @@ def croston(
     Croston's Method.
     Separately smooths the non-zero demand size (a) and the inter-demand interval (q).
     Forecast = a / q  (demand per period)
-    Note: The first interval is initialized to 1 if the first demand is non-zero.
+    The first interval counts the periods up to and including the first demand.
     """
     if not history:
         return {"forecast": [], "method": "Croston"}
 
-    # Separate into non-zero demand sizes and intervals
-    a = None  # smoothed demand size
-    q = None  # smoothed interval
-    last_nonzero = 0
+    a: Optional[float] = None  # smoothed demand size
+    q: float = 0.0             # smoothed interval
+    last_nonzero = -1
 
     for i, d in enumerate(history):
         if d > 0:
             interval = i - last_nonzero
             last_nonzero = i
             if a is None:
-                a = d
-                q = interval if interval > 0 else 1
+                a, q = float(d), float(interval)
             else:
                 a = alpha * d + (1 - alpha) * a
                 q = alpha * interval + (1 - alpha) * q
 
-    if a is None or q is None or q == 0:
-        mean_demand = sum(history) / len(history)
-        forecast_val = mean_demand
-    else:
-        forecast_val = a / q
+    forecast_val = a / q if a is not None else 0.0
 
     return {
         "forecast": [round(forecast_val, 2)] * horizon,
