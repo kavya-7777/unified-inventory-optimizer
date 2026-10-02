@@ -1,12 +1,12 @@
-"""API v1 router — Inventory (products, locations)."""
+"""API v1 router — Inventory (products, locations, lanes)."""
 from typing import List
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.db.deps import get_db
-from app.repositories.inventory import LocationRepository, ProductRepository
-from app.schemas.inventory import LocationOut, ProductOut
+from app.repositories.inventory import LaneRepository, LocationRepository, ProductRepository
+from app.schemas.inventory import LaneOut, LocationOut, ProductOut
 
 router = APIRouter(prefix="/api/v1", tags=["inventory"])
 
@@ -27,3 +27,25 @@ def get_products(
     db: Session = Depends(get_db),
 ):
     return ProductRepository(db).get_all(skip=skip, limit=limit)
+
+
+@router.get("/lanes", response_model=List[LaneOut])
+def get_lanes(db: Session = Depends(get_db)):
+    return [
+        LaneOut(
+            id=lane.id,
+            source_id=source.id,
+            source_name=source.name,
+            source_type=source.type,
+            source_region=source.region,
+            target_id=target.id,
+            target_name=target.name,
+            target_type=target.type,
+            target_region=target.region,
+            transit_time=lane.transit_time,
+            cost_per_unit=lane.cost_per_unit or 0.0,
+            capacity=lane.capacity,
+            created_at=lane.created_at,
+        )
+        for lane, source, target in LaneRepository(db).get_all()
+    ]

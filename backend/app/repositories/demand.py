@@ -1,11 +1,12 @@
 """Repository: Data access layer for demand history."""
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import Dict, List, Optional, Set, Tuple
 
-from sqlalchemy import select, tuple_
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
+from app.models.base import utcnow
 from app.models.inventory import DemandHistory, Location, Product
 
 BATCH_SIZE = 1000
@@ -108,3 +109,25 @@ class DemandRepository:
         if end_date:
             query = query.filter(DemandHistory.date <= _as_datetime(end_date))
         return query.order_by(DemandHistory.date.asc()).all()
+
+    def get_avg_demand_by_location(
+        self,
+        location_type: str = "Store",
+        product_id: Optional[str] = None,
+        days: int = 28,
+    ) -> List[Tuple[str, str, float]]:
+        """Average daily demand per (location_id, product_id) over the trailing `days`."""
+        cutoff = utcnow() - timedelta(days=days)
+        query = (
+            self.db.query(
+                DemandHistory.location_id,
+                DemandHistory.product_id,
+                func.avg(DemandHistory.quantity),
+            )
+            .join(Location, DemandHistory.location_id == Location.id)
+            .filter(Location.type == location_type, DemandHistory.date >= cutoff)
+        )
+        if product_id:
+            query = query.filter(DemandHistory.product_id == product_id)
+        rows = query.group_by(DemandHistory.location_id, DemandHistory.product_id).all()
+        return [(loc, prod, float(avg or 0.0)) for loc, prod, avg in rows]

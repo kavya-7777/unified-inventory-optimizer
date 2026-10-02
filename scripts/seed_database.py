@@ -9,7 +9,14 @@ else:
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend")))
 
 from app.db.session import SessionLocal  # noqa: E402
-from app.models.inventory import Lane, Location, Product  # noqa: E402
+from app.models.base import utcnow  # noqa: E402
+from app.models.inventory import (  # noqa: E402
+    InventorySnapshot,
+    Lane,
+    Location,
+    LocationProductPolicy,
+    Product,
+)
 from app.repositories.demand import DemandRepository  # noqa: E402
 
 DATA_PATH = os.path.join(
@@ -46,6 +53,16 @@ def seed() -> None:
         known_lanes = set(db.query(Lane.source_id, Lane.target_id).all())
         db.add_all(Lane(**lane) for lane in data.get("lanes", [])
                    if (lane["source_id"], lane["target_id"]) not in known_lanes)
+
+        known_policies = set(db.query(LocationProductPolicy.location_id,
+                                      LocationProductPolicy.product_id).all())
+        db.add_all(LocationProductPolicy(**pol) for pol in data.get("policies", [])
+                   if (pol["location_id"], pol["product_id"]) not in known_policies)
+
+        if not db.query(InventorySnapshot.id).first():
+            today = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            db.add_all(InventorySnapshot(**snap, snapshot_date=today)
+                       for snap in data.get("inventory", []))
         db.commit()
 
         result = DemandRepository(db).upsert_bulk(_demand_records(data.get("demand", [])))

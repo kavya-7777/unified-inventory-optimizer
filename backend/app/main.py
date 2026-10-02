@@ -13,7 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api.v1 import demand, inventory, optimization
+from app.api.v1 import dashboard, demand, inventory, optimization, policies, transportation
 from app.core.config import settings
 from app.db.deps import get_db
 
@@ -74,6 +74,9 @@ def jsonable_errors(exc: RequestValidationError) -> list:
 app.include_router(inventory.router)
 app.include_router(optimization.router)
 app.include_router(demand.router)
+app.include_router(policies.router)
+app.include_router(dashboard.router)
+app.include_router(transportation.router)
 
 
 @app.get("/health", tags=["health"])

@@ -61,6 +61,7 @@ class Lane(Base):
     target_id: Mapped[str] = mapped_column(ForeignKey("locations.id"))
     transit_time: Mapped[int]                           # Days
     cost_per_unit: Mapped[Optional[float]] = mapped_column(default=0.0)
+    capacity: Mapped[Optional[float]]                   # Max units/period; null = unconstrained
     created_at: Mapped[Optional[datetime]] = mapped_column(default=utcnow)
 
     __table_args__ = (

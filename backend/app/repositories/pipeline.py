@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
-from sqlalchemy import insert
+from sqlalchemy import func, insert
 from sqlalchemy.orm import Session
 
 from app.models.base import utcnow
@@ -83,6 +83,27 @@ class OptimizationResultRepository:
         for i in range(0, len(rows), BATCH_SIZE):
             self.db.execute(insert(OptimizationResult), rows[i:i + BATCH_SIZE])
         return len(rows)
+
+    def get_all_latest(self) -> List[OptimizationResult]:
+        """Most recent result per (location_id, product_id) across all runs."""
+        latest = (
+            self.db.query(
+                OptimizationResult.location_id,
+                OptimizationResult.product_id,
+                func.max(OptimizationResult.id).label("max_id"),
+            )
+            .filter(
+                OptimizationResult.location_id.isnot(None),
+                OptimizationResult.product_id.isnot(None),
+            )
+            .group_by(OptimizationResult.location_id, OptimizationResult.product_id)
+            .subquery()
+        )
+        return (
+            self.db.query(OptimizationResult)
+            .join(latest, OptimizationResult.id == latest.c.max_id)
+            .all()
+        )
 
     def get_by_run(self, pipeline_run_id: str) -> List[OptimizationResult]:
         return (
@@ -167,6 +188,9 @@ class AlertRepository:
 
     def get_unresolved(self) -> List[Alert]:
         return self.list_alerts(resolved=False, limit=None)
+
+    def count_unresolved(self) -> int:
+        return self.db.query(Alert).filter(Alert.resolved.is_(False)).count()
 
     def resolve(self, alert_id: int) -> Optional[Alert]:
         alert = self.db.get(Alert, alert_id)

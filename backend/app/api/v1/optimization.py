@@ -31,7 +31,10 @@ router = APIRouter(prefix="/api/v1", tags=["optimization"])
 
 
 def _invalid_network(e: NetworkValidationError) -> HTTPException:
-    return HTTPException(status_code=422, detail={"code": "INVALID_NETWORK", "errors": e.errors})
+    return HTTPException(
+        status_code=422,
+        detail={"code": "INVALID_NETWORK", "message": str(e), "errors": e.errors},
+    )
 
 
 @router.post(

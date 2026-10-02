@@ -30,21 +30,24 @@ graph TD
 
 ## Local Setup
 1. Clone the repository: `git clone <repo> && cd meio-platform`
-2. Set environment variables: `cp .env.example .env`
-3. Start infrastructure (Postgres, FastAPI, React via Docker): `sudo docker compose up -d`
-4. Run migrations (inside container): `sudo make migrate`
-5. Generate data & seed: `sudo make generate-data && sudo make seed`
+2. Set environment variables: `cp .env.example .env` and `cp frontend/.env.example frontend/.env`
+3. Start Postgres, FastAPI and React: `sudo docker compose up -d --build`
+4. Run migrations: `sudo make migrate`
+5. Generate synthetic data and seed it: `make generate-data && sudo make seed`
 6. Run tests: `sudo make test`
 
-*(Note: Depending on your system's Docker group permissions, you may need to prefix Docker and Make commands with `sudo`).*
+*(Depending on your Docker group permissions, you may need to prefix Docker and Make commands with `sudo`.)*
 
 Access the apps:
 - Frontend: http://localhost:5173
 - Backend: http://localhost:8000
 - API Docs: http://localhost:8000/docs
 
+Trigger a full pipeline run from the terminal with `make run`, or from the Optimization page in the UI.
+
 ## Environment Variables
 See `.env.example`. Never commit `.env` or any secrets.
+Set `API_KEY` to require `Authorization: Bearer <key>` on POST/PATCH endpoints; the frontend sends it from `VITE_API_KEY`.
 
 ## Git Workflow
 We use a feature branch workflow:

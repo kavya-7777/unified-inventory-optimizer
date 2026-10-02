@@ -483,3 +483,92 @@ def test_pipeline_persists_forecasts_for_mapped_nodes(client, db_session):
     assert data["stages"]["forecast"]["saved"] == 3
     assert db_session.query(DemandForecast).count() == 3
     assert data["node_results"]["ST1"]["safety_stock"] > 0
+
+
+# ─────────────────────────────────────────────
+# Lanes / Policies / Dashboard / Transportation Plan
+# ─────────────────────────────────────────────
+
+def _seed_network(db):
+    from datetime import timedelta
+
+    from app.models.base import utcnow
+    from app.models.inventory import DemandHistory, Lane, LocationProductPolicy
+
+    db.add_all([
+        Lane(id="L1", source_id="SUP1", target_id="DC1", transit_time=5, cost_per_unit=1.0,
+             capacity=1000),
+        Lane(id="L2", source_id="DC1", target_id="ST1", transit_time=1, cost_per_unit=2.0,
+             capacity=1000),
+        LocationProductPolicy(id="POL1", location_id="ST1", product_id="P1", service_level=0.95),
+    ])
+    today = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    db.add_all(
+        DemandHistory(location_id="ST1", product_id="P1", date=today - timedelta(days=d),
+                      quantity=10.0)
+        for d in range(1, 8)
+    )
+    db.commit()
+
+
+def test_get_lanes(client, db_session):
+    _seed_network(db_session)
+    lanes = client.get("/api/v1/lanes").json()
+    assert {(lane["source_id"], lane["target_id"]) for lane in lanes} == {
+        ("SUP1", "DC1"), ("DC1", "ST1"),
+    }
+    assert lanes[0]["source_name"]
+
+
+def test_policies_list_filter_and_update(client, db_session):
+    _seed_network(db_session)
+    assert len(client.get("/api/v1/policies", params={"q": "Store"}).json()) == 1
+    assert client.get("/api/v1/policies", params={"q": "nomatch"}).json() == []
+
+    updated = client.patch("/api/v1/policies/POL1", json={"service_level": 0.9, "max_s_out": 3})
+    assert updated.status_code == 200
+    assert (updated.json()["service_level"], updated.json()["max_s_out"]) == (0.9, 3)
+
+    assert client.patch("/api/v1/policies/POL1", json={"min_s_out": 5}).status_code == 422
+    assert client.patch("/api/v1/policies/POL1", json={"service_level": 1.5}).status_code == 422
+    assert client.patch("/api/v1/policies/missing", json={"service_level": 0.9}).status_code == 404
+
+
+def test_dashboard_summary(client, db_session):
+    _seed_network(db_session)
+    client.post("/api/v1/optimization/run", json={})
+    data = client.get("/api/v1/dashboard/summary").json()
+    assert data["total_policies"] == 1
+    assert data["last_run"]["status"] == "success"
+    assert data["measured_pairs"] == 0
+
+
+def test_transportation_plan(client, db_session):
+    assert client.get("/api/v1/transportation/plan").json()["status"] == "NO_EDGES"
+    _seed_network(db_session)
+    plan = client.get("/api/v1/transportation/plan").json()
+    assert plan["status"] == "OPTIMAL"
+    assert plan["active_lanes"] == 2
+    assert plan["total_cost"] == 30.0
+    assert all(f["product_name"] == "Product 1" for f in plan["lane_flows"])
+
+
+def test_transportation_plan_no_demand(client, db_session):
+    _seed_network(db_session)
+    plan = client.get("/api/v1/transportation/plan", params={"days": 1}).json()
+    assert plan["status"] == "NO_DEMAND_DATA"
+
+
+def test_multi_sku_shares_lane_capacity():
+    from app.transportation.optimizer import optimize_transportation_multi_sku
+    lanes = [
+        {"id": "cheap", "source_id": "S", "target_id": "ST", "cost_per_unit": 1, "capacity": 10},
+        {"id": "pricey", "source_id": "S", "target_id": "ST", "cost_per_unit": 5},
+    ]
+    skus = [
+        {"product_id": "A", "demand_by_location": {"ST": 8}},
+        {"product_id": "B", "demand_by_location": {"ST": 8}},
+    ]
+    result = optimize_transportation_multi_sku(lanes, skus)
+    assert result["status"] == "OPTIMAL"
+    assert result["total_cost"] == 10 * 1 + 6 * 5

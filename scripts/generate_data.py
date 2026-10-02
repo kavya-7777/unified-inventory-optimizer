@@ -40,18 +40,6 @@ def generate_data(size: str, days: int, seed: int = 42) -> dict:
     stores = [{"id": f"ST{i}", "name": f"Store {i}", "type": "Store"}
               for i in range(cfg["stores"])]
 
-    lanes = []
-    for i, dc in enumerate(dcs):
-        for sup in suppliers[i::len(dcs)] or suppliers[:1]:
-            lanes.append({"source_id": sup["id"], "target_id": dc["id"],
-                          "transit_time": rng.randint(3, 10),
-                          "cost_per_unit": round(rng.uniform(0.5, 2.0), 2)})
-    for i, store in enumerate(stores):
-        dc = dcs[i % len(dcs)]
-        lanes.append({"source_id": dc["id"], "target_id": store["id"],
-                      "transit_time": rng.randint(1, 3),
-                      "cost_per_unit": round(rng.uniform(1.0, 4.0), 2)})
-
     products = [{"id": f"P{i}", "name": f"Product {i}", "sku": f"SKU-{i:05d}",
                  "category": rng.choice(["General", "Grocery", "Electronics", "Apparel"]),
                  "unit_cost": round(rng.uniform(2, 200), 2)}
@@ -62,10 +50,52 @@ def generate_data(size: str, days: int, seed: int = 42) -> dict:
                "quantities": _demand_series(rng, days)}
               for s in stores for p in products]
 
+    mean = {(d["location_id"], d["product_id"]): sum(d["quantities"]) / days for d in demand}
+    store_dc = {s["id"]: dcs[i % len(dcs)]["id"] for i, s in enumerate(stores)}
+    store_load = {s["id"]: sum(mean[(s["id"], p["id"])] for p in products) for s in stores}
+    dc_load = {dc["id"]: sum(v for st, v in store_load.items() if store_dc[st] == dc["id"])
+               for dc in dcs}
+
+    lanes = []
+    for i, dc in enumerate(dcs):
+        for sup in suppliers[i::len(dcs)] or suppliers[:1]:
+            lanes.append({"source_id": sup["id"], "target_id": dc["id"],
+                          "transit_time": rng.randint(3, 10),
+                          "cost_per_unit": round(rng.uniform(0.5, 2.0), 2),
+                          "capacity": round(dc_load[dc["id"]] * rng.uniform(0.8, 1.2))})
+    for store in stores:
+        lanes.append({"source_id": store_dc[store["id"]], "target_id": store["id"],
+                      "transit_time": rng.randint(1, 3),
+                      "cost_per_unit": round(rng.uniform(1.0, 4.0), 2),
+                      "capacity": round(store_load[store["id"]] * rng.uniform(1.3, 1.8))})
+
+    policies = []
+    snapshots = []
+    service_levels = {"Supplier": 0.90, "DC": 0.95, "Store": 0.97}
+    for loc in suppliers + dcs + stores:
+        for p in products:
+            holding = round(p["unit_cost"] * 0.25 / 365, 4)
+            policies.append({"location_id": loc["id"], "product_id": p["id"],
+                             "service_level": service_levels[loc["type"]],
+                             "min_s_out": 0, "max_s_out": 0 if loc["type"] == "Store" else 10,
+                             "holding_cost": holding,
+                             "ordering_cost": round(rng.uniform(20, 120), 2),
+                             "review_period": 1 if loc["type"] == "Store" else 7})
+            if loc["type"] == "Supplier":
+                continue
+            daily = (mean[(loc["id"], p["id"])] if loc["type"] == "Store" else
+                     sum(mean[(s, p["id"])] for s, d in store_dc.items() if d == loc["id"]))
+            snapshots.append({"location_id": loc["id"], "product_id": p["id"],
+                              "on_hand": round(daily * rng.uniform(0.5, 6)),
+                              "on_order": round(daily * rng.uniform(0, 3)),
+                              "in_transit": round(daily * rng.uniform(0, 2))})
+
     return {
         "locations": suppliers + dcs + stores,
         "products": products,
         "lanes": lanes,
+        "policies": policies,
+        "inventory": snapshots,
         "demand": demand,
     }
 
@@ -82,4 +112,5 @@ if __name__ == "__main__":
     with open(OUTPUT, "w") as f:
         json.dump(data, f, separators=(",", ":"))
     print(f"Generated {len(data['locations'])} locations, {len(data['products'])} products, "
-          f"{len(data['lanes'])} lanes and {len(data['demand'])} demand series.")
+          f"{len(data['lanes'])} lanes, {len(data['policies'])} policies, "
+          f"{len(data['inventory'])} inventory snapshots and {len(data['demand'])} demand series.")
