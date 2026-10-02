@@ -49,6 +49,9 @@ def seed() -> None:
 
         known_prods = {x for (x,) in db.query(Product.id)}
         db.add_all(Product(**p) for p in data.get("products", []) if p["id"] not in known_prods)
+        # No ORM relationships between these models, so the unit of work won't order
+        # inserts by foreign key; flush parents before adding rows that reference them.
+        db.flush()
 
         known_lanes = set(db.query(Lane.source_id, Lane.target_id).all())
         db.add_all(Lane(**lane) for lane in data.get("lanes", [])

@@ -3,7 +3,7 @@ import sys
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -19,6 +19,7 @@ engine = create_engine(
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
+event.listen(engine, "connect", lambda conn, _: conn.execute("PRAGMA foreign_keys=ON"))
 TestingSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
