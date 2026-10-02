@@ -1,6 +1,6 @@
 """Pydantic schemas for inventory domain (request/response contracts)."""
 from datetime import datetime
-from typing import Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -69,6 +69,7 @@ class PolicyOut(BaseModel):
     holding_cost: float
     ordering_cost: float
     review_period: int
+    processing_time: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -81,3 +82,34 @@ class PolicyUpdate(BaseModel):
     holding_cost: Optional[float] = Field(default=None, ge=0)
     ordering_cost: Optional[float] = Field(default=None, ge=0)
     review_period: Optional[int] = Field(default=None, ge=1)
+    processing_time: Optional[int] = Field(default=None, ge=0, le=90)
+
+
+class InventoryPositionOut(BaseModel):
+    location_id: str
+    location_name: str
+    location_type: str
+    region: Optional[str] = None
+    product_id: str
+    product_name: str
+    sku: Optional[str] = None
+    category: Optional[str] = None
+    unit_cost: float
+    on_hand: float
+    on_order: float
+    in_transit: float
+    inventory_position: float
+    safety_stock: Optional[float] = None
+    reorder_point: Optional[float] = None
+    order_quantity: Optional[float] = None
+    daily_demand: Optional[float] = None
+    days_of_cover: Optional[float] = None
+    recommended_order: float
+    status: str  # STOCKOUT_RISK | REORDER | EXCESS | HEALTHY | NO_PLAN
+    snapshot_date: datetime
+
+
+class InventoryPositionsPage(BaseModel):
+    total: int
+    counts: Dict[str, int]
+    items: List[InventoryPositionOut]

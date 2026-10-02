@@ -14,7 +14,7 @@ jobs:
           API_URL: ${{ secrets.PROD_API_URL }}
           PIPELINE_SECRET: ${{ secrets.PIPELINE_SECRET }}
         run: |
-          curl --fail-with-body -X POST "$API_URL/api/v1/pipeline/run" \
+          curl --fail-with-body -X POST "$API_URL/api/v1/network/run" \
             -H "Authorization: Bearer $PIPELINE_SECRET" \
             -H "Content-Type: application/json" \
             -d '{"run_type": "scheduled"}'

@@ -1,11 +1,12 @@
 """API v1 router — Optimization and Pipeline runs."""
-from typing import List, Optional
+import uuid
+from typing import Callable, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.security import require_api_key
-from app.db.deps import get_db
+from app.db.deps import get_db, get_session_factory
 from app.forecasting.runner import run_forecast_pipeline
 from app.optimization.errors import NetworkValidationError
 from app.repositories.pipeline import (
@@ -17,13 +18,16 @@ from app.schemas.optimization import (
     AlertOut,
     ForecastRunRequest,
     ForecastRunResponse,
-    OptimizationResultOut,
+    NetworkRunAccepted,
+    NetworkRunRequest,
     OptimizationRunRequest,
     OptimizationRunResponse,
     PipelineRunOut,
     PipelineRunRequest,
     PipelineRunResponse,
+    RunResultsPage,
 )
+from app.services.network import execute_network_run
 from app.services.optimization import trigger_optimization
 from app.services.pipeline import run_daily_pipeline
 
@@ -69,6 +73,36 @@ def run_master_pipeline(payload: PipelineRunRequest, db: Session = Depends(get_d
         raise _invalid_network(e) from e
 
 
+@router.post(
+    "/network/run",
+    response_model=NetworkRunAccepted,
+    status_code=202,
+    dependencies=[Depends(require_api_key)],
+)
+def run_network(
+    payload: NetworkRunRequest,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    session_factory: Callable[[], Session] = Depends(get_session_factory),
+):
+    """
+    Starts the database-driven pipeline (forecast → GSM per SKU → alerts → transportation)
+    in the background. Poll GET /runs/{id} until status is success or failed.
+    """
+    repo = PipelineRunRepository(db)
+    active = repo.active_network_run()
+    if active:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "RUN_IN_PROGRESS", "message": f"Run {active.id} is still running",
+                    "pipeline_run_id": active.id},
+        )
+    params = payload.model_dump()
+    run = repo.create(run_id=str(uuid.uuid4()), run_type=payload.run_type, parameters=params)
+    background.add_task(execute_network_run, session_factory, run.id, params)
+    return {"pipeline_run_id": run.id, "status": run.status}
+
+
 @router.get("/runs", response_model=List[PipelineRunOut])
 def get_runs(
     skip: int = Query(0, ge=0),
@@ -86,11 +120,31 @@ def get_run(run_id: str, db: Session = Depends(get_db)):
     return run
 
 
-@router.get("/runs/{run_id}/results", response_model=List[OptimizationResultOut])
-def get_run_results(run_id: str, db: Session = Depends(get_db)):
+@router.get("/runs/{run_id}/results", response_model=RunResultsPage)
+def get_run_results(
+    run_id: str,
+    product_id: Optional[str] = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+):
     if not PipelineRunRepository(db).get_by_id(run_id):
         raise HTTPException(status_code=404, detail="Pipeline run not found")
-    return OptimizationResultRepository(db).get_by_run(run_id)
+    total, rows = OptimizationResultRepository(db).get_by_run_named(run_id, product_id, skip, limit)
+    items = [
+        {
+            **{c: getattr(r, c) for c in (
+                "id", "pipeline_run_id", "location_id", "product_id", "s_in", "s_out",
+                "net_replenishment_time", "safety_stock", "reorder_point", "order_quantity",
+                "objective_value", "demand_mean", "demand_std", "service_level")},
+            "location_name": loc.name if loc else None,
+            "location_type": loc.type if loc else None,
+            "product_name": prod.name if prod else None,
+            "sku": prod.sku if prod else None,
+        }
+        for r, loc, prod in rows
+    ]
+    return {"total": total, "items": items}
 
 
 @router.get("/alerts", response_model=List[AlertOut])

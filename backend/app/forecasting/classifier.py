@@ -1,53 +1,57 @@
 """
 Demand Classifier.
-Classifies a demand series into an inventory demand pattern,
-which determines which forecasting model is most appropriate.
+Classifies a demand series into an inventory demand pattern (Syntetos-Boylan scheme),
+which determines which family of forecasting models is appropriate.
 """
 from enum import Enum
-from typing import List
+from typing import Any, Dict, List
 
 import numpy as np
 
+ADI_CUTOFF = 1.32
+CV2_CUTOFF = 0.49
+
 
 class DemandPattern(str, Enum):
-    SMOOTH = "smooth"          # Regular, low-variability demand → ETS/ARIMA
-    INTERMITTENT = "intermittent"  # Frequent zeros → Croston
-    LUMPY = "lumpy"            # Sporadic, high variability → Croston variant
-    ERRATIC = "erratic"        # High variability, no zeros → ARIMA
+    SMOOTH = "smooth"              # Regular, low-variability demand
+    INTERMITTENT = "intermittent"  # Frequent zeros, stable sizes
+    LUMPY = "lumpy"                # Frequent zeros, highly variable sizes
+    ERRATIC = "erratic"            # Few zeros, highly variable sizes
 
 
-def classify_demand(history: List[float]) -> DemandPattern:
+def demand_statistics(history: List[float]) -> Dict[str, Any]:
     """
-    Classifies demand using ADI (Average Demand Interval) and CV² (squared coefficient
-    of variation of non-zero demand sizes).
-    
+    ADI (average demand interval) = periods / periods with demand.
+    CV² = squared coefficient of variation of the non-zero demand sizes.
+
     ADI < 1.32 and CV² < 0.49 → Smooth
     ADI >= 1.32 and CV² < 0.49 → Intermittent
     ADI < 1.32 and CV² >= 0.49 → Erratic
     ADI >= 1.32 and CV² >= 0.49 → Lumpy
     """
-    if not history or len(history) < 3:
-        return DemandPattern.SMOOTH
-
-    arr = np.array(history, dtype=float)
+    arr = np.asarray(history, dtype=float)
     nonzero = arr[arr > 0]
+    stats: Dict[str, Any] = {
+        "observations": int(arr.size),
+        "mean": round(float(arr.mean()), 4) if arr.size else 0.0,
+        "std": round(float(arr.std(ddof=1)), 4) if arr.size > 1 else 0.0,
+        "zero_share": round(float((arr == 0).mean()), 4) if arr.size else 0.0,
+        "adi": None,
+        "cv2": None,
+    }
+    if arr.size < 3:
+        return {**stats, "pattern": DemandPattern.SMOOTH.value}
+    if nonzero.size == 0:
+        return {**stats, "pattern": DemandPattern.INTERMITTENT.value}
 
-    if len(nonzero) == 0:
-        return DemandPattern.INTERMITTENT
-
-    # ADI: average interval between non-zero demands
-    adi = len(arr) / len(nonzero)
-
-    # CV²: squared coefficient of variation of non-zero demands
-    mean_nz = np.mean(nonzero)
-    std_nz = np.std(nonzero)
-    cv2 = (std_nz / mean_nz) ** 2
-
-    if adi < 1.32 and cv2 < 0.49:
-        return DemandPattern.SMOOTH
-    elif adi >= 1.32 and cv2 < 0.49:
-        return DemandPattern.INTERMITTENT
-    elif adi < 1.32 and cv2 >= 0.49:
-        return DemandPattern.ERRATIC
+    adi = arr.size / nonzero.size
+    cv2 = float((nonzero.std() / nonzero.mean()) ** 2)
+    if adi < ADI_CUTOFF:
+        pattern = DemandPattern.SMOOTH if cv2 < CV2_CUTOFF else DemandPattern.ERRATIC
     else:
-        return DemandPattern.LUMPY
+        pattern = DemandPattern.INTERMITTENT if cv2 < CV2_CUTOFF else DemandPattern.LUMPY
+    return {**stats, "adi": round(adi, 4), "cv2": round(cv2, 4), "pattern": pattern.value}
+
+
+def classify_demand(history: List[float]) -> DemandPattern:
+    return DemandPattern(demand_statistics(history)["pattern"])

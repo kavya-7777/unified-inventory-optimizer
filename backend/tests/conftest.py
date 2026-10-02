@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.db.base import Base  # noqa: E402
-from app.db.deps import get_db  # noqa: E402
+from app.db.deps import get_db, get_session_factory  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.inventory import Location, Product  # noqa: E402
 
@@ -32,6 +32,7 @@ def _override_get_db():
 
 
 app.dependency_overrides[get_db] = _override_get_db
+app.dependency_overrides[get_session_factory] = lambda: TestingSession
 
 
 @pytest.fixture(autouse=True)

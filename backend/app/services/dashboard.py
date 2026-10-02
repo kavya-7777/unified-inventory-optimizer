@@ -30,7 +30,10 @@ def build_dashboard_summary(db: Session) -> Dict[str, Any]:
             above += 1
 
     policy_repo = PolicyRepository(db)
-    recent = PipelineRunRepository(db).get_recent(limit=1)
+    run_repo = PipelineRunRepository(db)
+    # The control tower reflects the database-driven network runs, not sandbox experiments.
+    recent = (run_repo.get_recent(limit=1, run_types=["network", "scheduled"])
+              or run_repo.get_recent(limit=1))
     last_run = None
     if recent:
         run = recent[0]

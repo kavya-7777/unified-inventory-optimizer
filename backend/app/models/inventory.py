@@ -77,7 +77,7 @@ class Lane(Base):
 
 class LocationProductPolicy(Base):
     """Per-SKU-per-Location inventory policy settings."""
-    __tablename__ = "location_product_policy"
+    __tablename__ = "location_product_policies"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     location_id: Mapped[str] = mapped_column(ForeignKey("locations.id"))
@@ -88,6 +88,7 @@ class LocationProductPolicy(Base):
     holding_cost: Mapped[Optional[float]] = mapped_column(default=1.0)
     ordering_cost: Mapped[Optional[float]] = mapped_column(default=50.0)
     review_period: Mapped[Optional[int]] = mapped_column(default=1)   # Days
+    processing_time: Mapped[Optional[int]] = mapped_column(default=1, server_default="1")
     created_at: Mapped[Optional[datetime]] = mapped_column(default=utcnow)
     updated_at: Mapped[Optional[datetime]] = mapped_column(default=utcnow, onupdate=utcnow)
 
@@ -139,7 +140,7 @@ class LeadTimeObservation(Base):
 # ─────────────────────────────────────────────
 
 class DemandForecast(Base):
-    __tablename__ = "demand_forecast"
+    __tablename__ = "demand_forecasts"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     pipeline_run_id: Mapped[str] = mapped_column(ForeignKey("pipeline_runs.id"))
@@ -147,7 +148,9 @@ class DemandForecast(Base):
     product_id: Mapped[str] = mapped_column(ForeignKey("products.id"))
     forecast_date: Mapped[datetime]
     quantity: Mapped[float]
-    method: Mapped[Optional[str]]                       # SES | Holt-DES | Croston-SBA
+    lower_bound: Mapped[Optional[float]]                # 95% prediction interval
+    upper_bound: Mapped[Optional[float]]
+    method: Mapped[Optional[str]]                       # selected forecasting model
     pattern: Mapped[Optional[str]]                      # smooth | intermittent | lumpy | erratic
     created_at: Mapped[Optional[datetime]] = mapped_column(default=utcnow)
 
@@ -161,7 +164,7 @@ class DemandForecast(Base):
 # ─────────────────────────────────────────────
 
 class InventorySnapshot(Base):
-    __tablename__ = "inventory_snapshot"
+    __tablename__ = "inventory_snapshots"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     location_id: Mapped[str] = mapped_column(ForeignKey("locations.id"))
@@ -195,6 +198,7 @@ class PipelineRun(Base):
     duration_seconds: Mapped[Optional[float]]
     parameters: Mapped[Optional[Any]] = mapped_column(JSON)
     error: Mapped[Optional[str]] = mapped_column(Text)
+    summary: Mapped[Optional[Any]] = mapped_column(JSON)
     created_at: Mapped[Optional[datetime]] = mapped_column(default=utcnow)
 
     optimization_results: Mapped[List["OptimizationResult"]] = relationship(
@@ -227,6 +231,9 @@ class OptimizationResult(Base):
     safety_stock: Mapped[Optional[float]]
     reorder_point: Mapped[Optional[float]]
     order_quantity: Mapped[Optional[float]]             # EOQ
+    demand_mean: Mapped[Optional[float]]                # Daily demand used by the solver
+    demand_std: Mapped[Optional[float]]
+    service_level: Mapped[Optional[float]]
     objective_value: Mapped[Optional[float]]            # Safety stock holding cost
     created_at: Mapped[Optional[datetime]] = mapped_column(default=utcnow)
 

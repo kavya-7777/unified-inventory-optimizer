@@ -14,6 +14,7 @@ BATCH_SIZE = 1000
 Key = Tuple[str, str, datetime]
 
 
+
 def _as_datetime(d) -> datetime:
     return d if isinstance(d, datetime) else datetime.combine(d, time.min)
 
@@ -131,3 +132,41 @@ class DemandRepository:
             query = query.filter(DemandHistory.product_id == product_id)
         rows = query.group_by(DemandHistory.location_id, DemandHistory.product_id).all()
         return [(loc, prod, float(avg or 0.0)) for loc, prod, avg in rows]
+
+    def latest_date(self) -> Optional[datetime]:
+        return self.db.query(func.max(DemandHistory.date)).scalar()
+
+    def get_daily_series(
+        self,
+        history_days: int,
+        product_ids: Optional[List[str]] = None,
+        location_ids: Optional[List[str]] = None,
+        end: Optional[datetime] = None,
+    ) -> Tuple[List[datetime], Dict[Tuple[str, str], List[float]]]:
+        """
+        Dense daily demand series per (location, product) for the `history_days` days up to
+        and including `end` (default: latest recorded date). Days without a record are 0.
+        """
+        end = end or self.latest_date()
+        if end is None:
+            return [], {}
+        end = _as_datetime(end.date() if isinstance(end, datetime) else end)
+        dates = [end - timedelta(days=offset) for offset in range(history_days - 1, -1, -1)]
+        index = {d: i for i, d in enumerate(dates)}
+
+        query = self.db.query(
+            DemandHistory.location_id, DemandHistory.product_id,
+            DemandHistory.date, DemandHistory.quantity,
+        ).filter(DemandHistory.date >= dates[0], DemandHistory.date <= end)
+        if product_ids:
+            query = query.filter(DemandHistory.product_id.in_(product_ids))
+        if location_ids:
+            query = query.filter(DemandHistory.location_id.in_(location_ids))
+
+        series: Dict[Tuple[str, str], List[float]] = {}
+        for loc, prod, day, qty in query:
+            pos = index.get(_as_datetime(day.date()))
+            if pos is None:
+                continue
+            series.setdefault((loc, prod), [0.0] * history_days)[pos] += float(qty)
+        return dates, series

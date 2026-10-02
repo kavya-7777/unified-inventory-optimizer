@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Field'
 import { EmptyState, ErrorNotice, Spinner } from '@/components/ui/Feedback'
-import { formatDateTime } from '@/lib/utils'
+import { formatDateTime, humanize } from '@/lib/utils'
 import type { BadgeTone } from '@/lib/utils'
 
 const SEVERITY_TONE: Record<string, BadgeTone> = {
@@ -52,7 +52,7 @@ export function AlertsPage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Alerts</h1>
           <p className="mt-1 text-sm text-muted">
-            Capacity violations and infeasible transportation flows raised by pipeline runs.
+            Stockout risks, capacity violations, solver fallbacks and infeasible transportation plans raised by pipeline runs.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -83,7 +83,7 @@ export function AlertsPage() {
           {data && data.length === 0 && (
             <EmptyState
               title={filter === 'unresolved' ? 'No unresolved alerts' : 'No alerts'}
-              description="Alerts are raised automatically when a pipeline run hits a capacity violation or an infeasible transportation flow."
+              description="Each network run re-checks stock against the new safety stock and raises alerts where it falls short."
             />
           )}
           {data && data.length > 0 && (
@@ -104,7 +104,7 @@ export function AlertsPage() {
                     <td className="px-5 py-2.5">
                       <Badge tone={SEVERITY_TONE[alert.severity] ?? 'neutral'}>{alert.severity}</Badge>
                     </td>
-                    <td className="px-5 py-2.5 text-muted">{alert.alert_type}</td>
+                    <td className="whitespace-nowrap px-5 py-2.5 text-muted">{humanize(alert.alert_type)}</td>
                     <td className="px-5 py-2.5 text-slate-900">{alert.message}</td>
                     <td className="px-5 py-2.5">
                       {alert.pipeline_run_id ? (

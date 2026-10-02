@@ -19,6 +19,7 @@ const EDITABLE_FIELDS: { key: EditableField; label: string; step?: string }[] = 
   { key: 'holding_cost', label: 'Holding cost', step: '0.01' },
   { key: 'ordering_cost', label: 'Ordering cost', step: '0.01' },
   { key: 'review_period', label: 'Review period' },
+  { key: 'processing_time', label: 'Processing days' },
 ]
 
 export function PoliciesPage() {
@@ -28,7 +29,7 @@ export function PoliciesPage() {
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['policies', search],
-    queryFn: () => api.listPolicies({ q: search || undefined, limit: 500 }),
+    queryFn: () => api.listPolicies({ q: search || undefined, limit: 1000 }),
   })
 
   const saveMutation = useMutation({
@@ -123,7 +124,7 @@ export function PoliciesPage() {
                 <thead>
                   <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
                     <th className="px-4 py-2.5 font-medium">Node</th>
-                    <th className="px-4 py-2.5 font-medium">SKU</th>
+                    <th className="px-4 py-2.5 font-medium">Product</th>
                     {EDITABLE_FIELDS.map((f) => (
                       <th key={f.key} className="px-4 py-2.5 font-medium">{f.label}</th>
                     ))}
@@ -137,7 +138,10 @@ export function PoliciesPage() {
                         <td className="whitespace-nowrap px-4 py-2">
                           {policy.location_name} <Badge tone="neutral">{policy.location_type}</Badge>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-2 text-muted">{policy.product_sku ?? policy.product_name}</td>
+                        <td className="whitespace-nowrap px-4 py-2">
+                          <p className="text-slate-900">{policy.product_name}</p>
+                          <p className="font-mono text-xs text-muted">{policy.product_sku}</p>
+                        </td>
                         {EDITABLE_FIELDS.map((f) => (
                           <td key={f.key} className="px-2 py-1.5">
                             <Input

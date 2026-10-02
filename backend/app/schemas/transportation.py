@@ -30,3 +30,4 @@ class TransportationPlanOut(BaseModel):
     capacity_utilization: Optional[float] = None
     active_lanes: int = 0
     lane_flows: List[LaneFlowOut] = Field(default_factory=list)
+    demand_basis: Optional[str] = None  # forecast | history

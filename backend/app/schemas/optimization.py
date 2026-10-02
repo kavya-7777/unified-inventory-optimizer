@@ -37,7 +37,7 @@ class EdgeSchema(BaseModel):
 class ItemHistorySchema(BaseModel):
     id: str
     history: List[float] = Field(default_factory=list)
-    has_trend: bool = False
+    has_trend: Optional[bool] = None
 
 
 class OptimizationRunRequest(BaseModel):
@@ -94,9 +94,13 @@ class PipelineRunResponse(BaseModel):
 class ForecastResult(BaseModel):
     id: str
     forecast: List[float]
+    lower: List[float]
+    upper: List[float]
     method: str
     pattern: str
     demand_std: float
+    mase: Optional[float] = None
+    mape: Optional[float] = None
 
 
 class ForecastRunResponse(BaseModel):
@@ -114,6 +118,8 @@ class PipelineRunOut(BaseModel):
     finished_at: Optional[datetime]
     duration_seconds: Optional[float]
     error: Optional[str]
+    parameters: Optional[Dict[str, Any]] = None
+    summary: Optional[Dict[str, Any]] = None
 
     model_config = {"from_attributes": True}
 
@@ -146,3 +152,31 @@ class AlertOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class NetworkRunRequest(BaseModel):
+    run_type: str = Field(default="network", pattern="^(network|scheduled)$")
+    product_ids: Optional[List[str]] = None
+    horizon: int = Field(default=14, ge=1, le=90)
+    history_days: int = Field(default=90, ge=28, le=730)
+    max_service_time: int = Field(default=30, ge=1, le=365)
+
+
+class NetworkRunAccepted(BaseModel):
+    pipeline_run_id: str
+    status: str
+
+
+class NamedOptimizationResultOut(OptimizationResultOut):
+    location_name: Optional[str] = None
+    location_type: Optional[str] = None
+    product_name: Optional[str] = None
+    sku: Optional[str] = None
+    demand_mean: Optional[float] = None
+    demand_std: Optional[float] = None
+    service_level: Optional[float] = None
+
+
+class RunResultsPage(BaseModel):
+    total: int
+    items: List[NamedOptimizationResultOut]

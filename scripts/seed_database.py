@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import sys
@@ -11,10 +12,16 @@ else:
 from app.db.session import SessionLocal  # noqa: E402
 from app.models.base import utcnow  # noqa: E402
 from app.models.inventory import (  # noqa: E402
+    Alert,
+    DemandForecast,
+    DemandHistory,
     InventorySnapshot,
     Lane,
+    LeadTimeObservation,
     Location,
     LocationProductPolicy,
+    OptimizationResult,
+    PipelineRun,
     Product,
 )
 from app.repositories.demand import DemandRepository  # noqa: E402
@@ -34,7 +41,14 @@ def _demand_records(series: list) -> list:
     return records
 
 
-def seed() -> None:
+# Children before parents, so foreign keys never block the delete.
+RESET_ORDER = [
+    Alert, DemandForecast, OptimizationResult, PipelineRun, InventorySnapshot,
+    DemandHistory, LeadTimeObservation, LocationProductPolicy, Lane, Product, Location,
+]
+
+
+def seed(reset: bool = False) -> None:
     if not os.path.exists(DATA_PATH):
         sys.exit("No synthetic data found. Run `make generate-data` first.")
 
@@ -43,6 +57,12 @@ def seed() -> None:
 
     db = SessionLocal()
     try:
+        if reset:
+            for model in RESET_ORDER:
+                db.query(model).delete(synchronize_session=False)
+            db.commit()
+            print("Existing data removed.")
+
         known_locs = {x for (x,) in db.query(Location.id)}
         db.add_all(Location(**loc) for loc in data.get("locations", [])
                    if loc["id"] not in known_locs)
@@ -79,4 +99,7 @@ def seed() -> None:
 
 
 if __name__ == "__main__":
-    seed()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--reset", action="store_true",
+                        help="delete all existing data (including run history) before seeding")
+    seed(reset=parser.parse_args().reset)

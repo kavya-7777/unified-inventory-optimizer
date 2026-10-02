@@ -66,7 +66,8 @@ def optimize_transportation_multi_sku(
     every SKU routed through it.
 
     lanes: [{id, source_id, target_id, cost_per_unit, capacity, transit_time}, ...]
-    skus_demand: [{product_id, sku, demand_by_location: {location_id: demand}}, ...]
+    skus_demand: [{product_id, sku, demand_by_location: {location_id: demand},
+                   lane_ids (optional): lanes this SKU may use}, ...]
     Locations without an entry are pass-through nodes; nodes with no inbound lane supply
     whatever is required.
     """
@@ -115,8 +116,13 @@ def optimize_transportation_multi_sku(
         )
         b_ub = np.array([float(lanes[i]["capacity"]) for i in capacitated])
 
+    bounds = [
+        (0.0, 0.0) if "lane_ids" in sku and lane["id"] not in sku["lane_ids"] else (0.0, None)
+        for lane in lanes
+        for sku in skus_demand
+    ]
     res = linprog(
-        costs, A_eq=a_eq, b_eq=b_eq, A_ub=a_ub, b_ub=b_ub, bounds=(0, None), method="highs"
+        costs, A_eq=a_eq, b_eq=b_eq, A_ub=a_ub, b_ub=b_ub, bounds=bounds, method="highs"
     )
     if not res.success:
         return {"status": "INFEASIBLE", "message": res.message, "lane_flows": [],

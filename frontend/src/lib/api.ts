@@ -1,13 +1,17 @@
 import type {
   AlertOut,
   DashboardSummaryOut,
+  DemandForecastOut,
   DemandHistoryOut,
   DemandIngestResponse,
   DemandRecord,
   ForecastRunRequest,
   ForecastRunResponse,
+  InventoryPositionsPage,
   LaneOut,
   LocationOut,
+  NetworkRunAccepted,
+  NetworkRunRequest,
   OptimizationRunRequest,
   OptimizationRunResponse,
   PipelineRunOut,
@@ -16,6 +20,7 @@ import type {
   PolicyOut,
   PolicyUpdate,
   ProductOut,
+  RunResultsPage,
   TransportationPlanOut,
 } from './types'
 
@@ -101,11 +106,14 @@ export const api = {
   healthReady: () => request<{ status: string; detail?: string }>('/health/ready'),
 
   // Inventory
-  listLocations: (skip = 0, limit = 100) =>
-    request<LocationOut[]>(`/api/v1/locations${query({ skip, limit })}`),
+  listLocations: (skip = 0, limit = 100, type?: 'Supplier' | 'DC' | 'Store') =>
+    request<LocationOut[]>(`/api/v1/locations${query({ skip, limit, type })}`),
   listProducts: (skip = 0, limit = 100) =>
     request<ProductOut[]>(`/api/v1/products${query({ skip, limit })}`),
   listLanes: () => request<LaneOut[]>('/api/v1/lanes'),
+  getInventoryPositions: (
+    params: { location_type?: string; status?: string; q?: string; skip?: number; limit?: number } = {},
+  ) => request<InventoryPositionsPage>(`/api/v1/inventory/positions${query({ ...params })}`),
 
   // Policies
   listPolicies: (params: { q?: string; location_id?: string; skip?: number; limit?: number } = {}) =>
@@ -131,6 +139,8 @@ export const api = {
     }),
   getDemandHistory: (params: { location_id: string; product_id: string; start_date?: string; end_date?: string }) =>
     request<DemandHistoryOut[]>(`/api/v1/demand/history${query(params)}`),
+  getDemandForecast: (params: { location_id: string; product_id: string; horizon?: number; history_days?: number }) =>
+    request<DemandForecastOut>(`/api/v1/demand/forecast${query(params)}`),
 
   // Optimization
   runOptimization: (payload: OptimizationRunRequest) =>
@@ -149,9 +159,17 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  runNetwork: (payload: NetworkRunRequest) =>
+    request<NetworkRunAccepted>('/api/v1/network/run', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   // Runs
   listRuns: (limit = 10) => request<PipelineRunOut[]>(`/api/v1/runs${query({ limit })}`),
   getRun: (runId: string) => request<PipelineRunOut>(`/api/v1/runs/${runId}`),
+  getRunResults: (runId: string, params: { product_id?: string; skip?: number; limit?: number } = {}) =>
+    request<RunResultsPage>(`/api/v1/runs/${runId}/results${query({ ...params })}`),
 
   // Alerts
   listAlerts: (params: { resolved?: boolean; limit?: number } = {}) =>

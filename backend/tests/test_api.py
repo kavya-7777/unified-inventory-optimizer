@@ -115,8 +115,9 @@ def test_results_persisted_for_mapped_nodes(client, db_session):
     rows = db_session.query(OptimizationResult).filter_by(pipeline_run_id=run_id).all()
     assert {r.location_id for r in rows} == {"DC1", "ST1"}
 
-    api_rows = client.get(f"/api/v1/runs/{run_id}/results").json()
-    assert len(api_rows) == 2
+    page = client.get(f"/api/v1/runs/{run_id}/results").json()
+    assert page["total"] == 2
+    assert {r["location_name"] for r in page["items"]} == {"Distribution Center 1", "Store 1"}
 
 
 def test_get_run_not_found(client):
@@ -333,35 +334,78 @@ def test_intermittent_demand_classification():
 
 
 def test_ses_constant_demand():
-    from app.forecasting.ets import simple_exponential_smoothing
-    result = simple_exponential_smoothing([100.0] * 10, alpha=0.3, horizon=3)
-    assert all(abs(f - 100.0) < 0.01 for f in result["forecast"])
+    from app.forecasting.models import ses
+    fit = ses([100.0] * 10, 3, alpha=0.3)
+    assert all(abs(f - 100.0) < 0.01 for f in fit.forecast)
 
 
 def test_holt_forecast_never_negative():
-    from app.forecasting.ets import double_exponential_smoothing
-    result = double_exponential_smoothing([50, 40, 30, 20, 10, 5], horizon=10)
-    assert min(result["forecast"]) >= 0.0
+    from app.forecasting.models import holt
+    assert min(holt([50, 40, 30, 20, 10, 5], 10).forecast) >= 0.0
+
+
+def test_holt_winters_recovers_weekly_pattern():
+    from app.forecasting.models import holt_winters
+    week = [10, 10, 10, 10, 10, 30, 30]
+    fit = holt_winters(week * 8, 7)
+    assert [round(v) for v in fit.forecast] == week
 
 
 def test_croston_known_answer():
     """[0, 0, 10, 0, 10] with alpha=0: size 10, first interval 3 → 10 / 3"""
-    from app.forecasting.croston import croston
-    result = croston([0.0, 0.0, 10.0, 0.0, 10.0], alpha=0.0, horizon=1)
-    assert result["forecast"][0] == round(10 / 3, 2)
+    from app.forecasting.models import croston
+    assert round(croston([0.0, 0.0, 10.0, 0.0, 10.0], 1, alpha=0.0).forecast[0], 4) == 3.3333
 
 
-def test_croston_all_zero():
-    from app.forecasting.croston import croston
-    assert croston([0.0, 0.0, 0.0], horizon=2)["forecast"] == [0.0, 0.0]
+def test_sba_applies_bias_correction():
+    from app.forecasting.models import croston, sba
+    y = [0, 4, 0, 0, 6, 0, 5, 0, 0, 0, 7]
+    assert abs(sba(y, 1, 0.2).forecast[0] - 0.9 * croston(y, 1, 0.2).forecast[0]) < 1e-9
 
 
-def test_forecasting_runner_routes_correctly():
+def test_tsb_decays_after_demand_stops():
+    from app.forecasting.models import croston, tsb
+    y = [5, 0, 6, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    assert tsb(y, 1, 0.3, 0.1).forecast[0] < croston(y, 1, 0.3).forecast[0]
+
+
+def test_engine_all_zero_series():
+    from app.forecasting.engine import forecast_series
+    result = forecast_series([0.0] * 30, 5)
+    assert result["method"] == "Zero"
+    assert result["forecast"] == [0.0] * 5
+
+
+def test_engine_selects_seasonal_model_for_weekly_demand():
+    import random
+
+    from app.forecasting.engine import forecast_series
+    rng = random.Random(1)
+    week = [20, 18, 19, 21, 25, 45, 40]
+    history = [week[t % 7] + rng.gauss(0, 1.5) for t in range(84)]
+    result = forecast_series(history, 14)
+    assert result["pattern"] == "smooth"
+    assert result["method"] in ("Holt-Winters", "Seasonal Naive")
+    assert result["metrics"]["mase"] < 1
+    assert len(result["leaderboard"]) >= 5
+    assert all(lo <= f <= hi for lo, f, hi in
+               zip(result["lower"], result["forecast"], result["upper"]))
+
+
+def test_engine_routes_intermittent_to_intermittent_models():
+    from app.forecasting.engine import forecast_series
+    history = [0, 0, 10, 0, 0, 8, 0, 0, 12, 0] * 3
+    result = forecast_series(history, 4)
+    assert result["pattern"] == "intermittent"
+    assert {m["method"] for m in result["leaderboard"]} >= {"Croston", "Croston-SBA", "TSB"}
+
+
+def test_forecasting_runner_shape():
     from app.forecasting.runner import run_forecast_pipeline
     items = [{"id": "SKU1", "history": [0, 0, 10, 0, 0, 8, 0, 0, 12, 0]}]
-    results = run_forecast_pipeline(items, horizon=4)
-    assert results[0]["method"] == "Croston-SBA"
-    assert len(results[0]["forecast"]) == 4
+    result = run_forecast_pipeline(items, horizon=4)[0]
+    assert result["method"] in ("Croston", "Croston-SBA", "TSB", "Moving Average", "SES")
+    assert len(result["forecast"]) == len(result["lower"]) == len(result["upper"]) == 4
 
 
 def test_forecast_endpoint(client):
@@ -489,7 +533,7 @@ def test_pipeline_persists_forecasts_for_mapped_nodes(client, db_session):
 # Lanes / Policies / Dashboard / Transportation Plan
 # ─────────────────────────────────────────────
 
-def _seed_network(db):
+def _seed_network(db, days=7):
     from datetime import timedelta
 
     from app.models.base import utcnow
@@ -500,13 +544,18 @@ def _seed_network(db):
              capacity=1000),
         Lane(id="L2", source_id="DC1", target_id="ST1", transit_time=1, cost_per_unit=2.0,
              capacity=1000),
-        LocationProductPolicy(id="POL1", location_id="ST1", product_id="P1", service_level=0.95),
+        LocationProductPolicy(id="POL0", location_id="SUP1", product_id="P1", max_s_out=10,
+                              processing_time=2, holding_cost=0.5),
+        LocationProductPolicy(id="POLD", location_id="DC1", product_id="P1", max_s_out=5,
+                              processing_time=1, holding_cost=1.0),
+        LocationProductPolicy(id="POL1", location_id="ST1", product_id="P1", service_level=0.95,
+                              max_s_out=0, processing_time=0, holding_cost=2.0),
     ])
     today = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     db.add_all(
         DemandHistory(location_id="ST1", product_id="P1", date=today - timedelta(days=d),
-                      quantity=10.0)
-        for d in range(1, 8)
+                      quantity=float(8 + (d * 7) % 5))
+        for d in range(1, days + 1)
     )
     db.commit()
 
@@ -538,7 +587,7 @@ def test_dashboard_summary(client, db_session):
     _seed_network(db_session)
     client.post("/api/v1/optimization/run", json={})
     data = client.get("/api/v1/dashboard/summary").json()
-    assert data["total_policies"] == 1
+    assert data["total_policies"] == 3
     assert data["last_run"]["status"] == "success"
     assert data["measured_pairs"] == 0
 
@@ -549,7 +598,9 @@ def test_transportation_plan(client, db_session):
     plan = client.get("/api/v1/transportation/plan").json()
     assert plan["status"] == "OPTIMAL"
     assert plan["active_lanes"] == 2
-    assert plan["total_cost"] == 30.0
+    daily = sum(8 + (d * 7) % 5 for d in range(1, 8)) / 7
+    assert plan["demand_basis"] == "history"
+    assert plan["total_cost"] == round(daily * (1.0 + 2.0), 2)
     assert all(f["product_name"] == "Product 1" for f in plan["lane_flows"])
 
 
@@ -572,3 +623,141 @@ def test_multi_sku_shares_lane_capacity():
     result = optimize_transportation_multi_sku(lanes, skus)
     assert result["status"] == "OPTIMAL"
     assert result["total_cost"] == 10 * 1 + 6 * 5
+
+
+# ─────────────────────────────────────────────
+# Database-driven network pipeline
+# ─────────────────────────────────────────────
+
+def _seed_snapshot(db, on_hand):
+    from app.models.inventory import InventorySnapshot
+    db.add_all([
+        InventorySnapshot(location_id="ST1", product_id="P1", on_hand=on_hand, on_order=0,
+                          in_transit=0),
+        InventorySnapshot(location_id="DC1", product_id="P1", on_hand=500, on_order=0,
+                          in_transit=0),
+    ])
+    db.commit()
+
+
+def test_echelon_demand_pools_variance():
+    from types import SimpleNamespace
+
+    from app.services.network import echelon_demand
+    lanes = [SimpleNamespace(source_id="DC", target_id=s) for s in ("A", "B")]
+    lanes.append(SimpleNamespace(source_id="S1", target_id="DC"))
+    lanes.append(SimpleNamespace(source_id="S2", target_id="DC"))
+    demand = echelon_demand({"S1", "S2", "DC", "A", "B"}, lanes,
+                            {"A": (10.0, 3.0), "B": (20.0, 4.0)})
+    assert demand["DC"] == (30.0, 5.0)
+    assert demand["S1"] == (15.0, 2.5)
+
+
+def test_network_run_end_to_end(client, db_session):
+    _seed_network(db_session, days=60)
+    _seed_snapshot(db_session, on_hand=0)
+
+    response = client.post("/api/v1/network/run", json={"horizon": 7, "history_days": 56})
+    assert response.status_code == 202
+    run_id = response.json()["pipeline_run_id"]
+
+    run = client.get(f"/api/v1/runs/{run_id}").json()
+    assert run["status"] == "success", run["error"]
+    summary = run["summary"]
+    assert summary["products_optimized"] == 1
+    assert summary["series_forecast"] == 1
+    assert summary["nodes_optimized"] == 3
+    assert summary["stockout_alerts"] == 1
+    assert summary["transportation"]["status"] == "OPTIMAL"
+
+    results = client.get(f"/api/v1/runs/{run_id}/results").json()
+    by_loc = {r["location_id"]: r for r in results["items"]}
+    assert set(by_loc) == {"SUP1", "DC1", "ST1"}
+    assert by_loc["DC1"]["demand_mean"] == by_loc["ST1"]["demand_mean"] > 0
+    assert by_loc["ST1"]["sku"] == "SKU-1"
+
+    alerts = client.get("/api/v1/alerts", params={"resolved": False}).json()
+    assert [a["alert_type"] for a in alerts] == ["STOCKOUT_RISK"]
+    assert alerts[0]["location_id"] == "ST1"
+
+    positions = client.get("/api/v1/inventory/positions").json()
+    assert positions["total"] == 2
+    store = next(p for p in positions["items"] if p["location_id"] == "ST1")
+    assert store["status"] == "STOCKOUT_RISK"
+    assert store["recommended_order"] > 0
+    assert positions["counts"]["STOCKOUT_RISK"] == 1
+
+    plan = client.get("/api/v1/transportation/plan").json()
+    assert plan["demand_basis"] == "forecast"
+
+    client.post("/api/v1/optimization/run", json={"nodes": [{"id": "X", "type": "DC",
+                                                              "processing_time": -1}]})
+    dash = client.get("/api/v1/dashboard/summary").json()
+    assert dash["measured_pairs"] == 2
+    assert dash["at_risk_count"] == 1
+    assert dash["last_run"]["id"] == run_id
+
+    # A second run supersedes the first run's stockout alerts instead of piling them up.
+    client.post("/api/v1/network/run", json={"horizon": 7, "history_days": 56})
+    open_alerts = client.get("/api/v1/alerts", params={"resolved": False}).json()
+    assert len(open_alerts) == 1
+    assert open_alerts[0]["pipeline_run_id"] != run_id
+
+
+def test_network_run_without_history_fails_cleanly(client):
+    run_id = client.post("/api/v1/network/run", json={}).json()["pipeline_run_id"]
+    run = client.get(f"/api/v1/runs/{run_id}").json()
+    assert run["status"] == "failed"
+    assert "demand history" in run["error"]
+
+
+def test_network_run_rejects_concurrent_run(client, db_session):
+    from app.repositories.pipeline import PipelineRunRepository
+    PipelineRunRepository(db_session).create("busy", "network", {})
+    response = client.post("/api/v1/network/run", json={})
+    assert response.status_code == 409
+    assert response.json()["detail"]["pipeline_run_id"] == "busy"
+
+
+def test_inventory_positions_filters(client, db_session):
+    _seed_network(db_session)
+    _seed_snapshot(db_session, on_hand=50)
+    data = client.get("/api/v1/inventory/positions", params={"location_type": "Store"}).json()
+    assert data["total"] == 1
+    assert data["items"][0]["status"] == "NO_PLAN"
+    assert client.get("/api/v1/inventory/positions", params={"q": "zzz"}).json()["total"] == 0
+    assert client.get("/api/v1/inventory/positions",
+                      params={"status": "BOGUS"}).status_code == 422
+
+
+def test_classify_position_rules():
+    from app.services.inventory import classify_position
+    assert classify_position(5, 5, None, None, None) == "NO_PLAN"
+    assert classify_position(5, 50, 10, 30, 20) == "STOCKOUT_RISK"
+    assert classify_position(20, 25, 10, 30, 20) == "REORDER"
+    assert classify_position(60, 60, 10, 30, 20) == "EXCESS"
+    assert classify_position(40, 40, 10, 30, 20) == "HEALTHY"
+
+
+def test_demand_forecast_endpoint(client, db_session):
+    _seed_network(db_session, days=60)
+    params = {"location_id": "ST1", "product_id": "P1", "horizon": 10, "history_days": 56}
+    data = client.get("/api/v1/demand/forecast", params=params).json()
+    assert len(data["history"]) == 56
+    assert len(data["forecast"]) == 10
+    assert data["backtest"]
+    assert sum(m["selected"] for m in data["leaderboard"]) == 1
+    assert data["forecast"][0]["date"] > data["history"][-1]["date"]
+    missing = {**params, "location_id": "NOPE"}
+    assert client.get("/api/v1/demand/forecast", params=missing).status_code == 404
+
+
+def test_locations_filter_by_type(client):
+    stores = client.get("/api/v1/locations", params={"type": "Store"}).json()
+    assert [s["id"] for s in stores] == ["ST1"]
+
+
+def test_policy_processing_time_update(client, db_session):
+    _seed_network(db_session)
+    updated = client.patch("/api/v1/policies/POLD", json={"processing_time": 4}).json()
+    assert updated["processing_time"] == 4

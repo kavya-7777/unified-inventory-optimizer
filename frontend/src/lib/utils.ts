@@ -15,10 +15,43 @@ export function formatNumber(value: number | null | undefined, digits = 0): stri
   })
 }
 
+/** The backend stores naive UTC timestamps; mark them as UTC so they render in local time. */
+function parseTimestamp(value: string): Date {
+  const hasZone = /(Z|[+-]\d{2}:?\d{2})$/i.test(value)
+  return new Date(hasZone || !value.includes('T') ? value : `${value}Z`)
+}
+
+export const CURRENCY = 'INR'
+
+/** Currency with Indian digit grouping; `compact` gives e.g. ₹1.1 Cr / ₹4.5 L. */
+export function formatCurrency(value: number | null | undefined, compact = false): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: CURRENCY,
+    notation: compact ? 'compact' : 'standard',
+    maximumFractionDigits: compact ? 2 : value < 100 ? 2 : 0,
+  }).format(value)
+}
+
+/** "2026-10-02" → "2 Oct" */
+export function formatDate(value: string | null | undefined): string {
+  if (!value) return '—'
+  const d = new Date(`${value.slice(0, 10)}T00:00:00`)
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+}
+
+/** "STOCKOUT_RISK" → "Stockout risk" */
+export function humanize(value: string | null | undefined): string {
+  if (!value) return '—'
+  const text = value.replace(/_/g, ' ').toLowerCase()
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
 /** Format an ISO datetime string as a short, readable local date-time. */
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return '—'
-  const d = new Date(value)
+  const d = parseTimestamp(value)
   if (Number.isNaN(d.getTime())) return value
   return d.toLocaleString(undefined, {
     month: 'short',
@@ -42,7 +75,8 @@ export function toneForStatus(status: string | null | undefined): BadgeTone {
   const s = (status ?? '').toUpperCase()
   if (['OPTIMAL', 'SUCCESS', 'OK', 'READY', 'FEASIBLE'].includes(s)) return 'ok'
   if (['RUNNING', 'FEASIBLE_PENDING'].includes(s)) return 'brand'
-  if (['NO_EDGES', 'NO_DEMAND_DATA', 'SKIPPED'].includes(s)) return 'warn'
-  if (['FAILED', 'INFEASIBLE', 'ERROR', 'UNHEALTHY'].includes(s)) return 'danger'
+  if (['NO_EDGES', 'NO_DEMAND_DATA', 'SKIPPED', 'REORDER', 'EXCESS', 'WARNING'].includes(s)) return 'warn'
+  if (['FAILED', 'INFEASIBLE', 'ERROR', 'UNHEALTHY', 'STOCKOUT_RISK', 'CRITICAL'].includes(s)) return 'danger'
+  if (['HEALTHY'].includes(s)) return 'ok'
   return 'neutral'
 }

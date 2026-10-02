@@ -115,9 +115,13 @@ export interface ForecastRunRequest {
 export interface ForecastItem {
   id: string
   forecast: number[]
-  method: string // "SES" | "Holt-DES" | "Croston-SBA" | "NAIVE"
-  pattern: string // "smooth" | "intermittent" | "lumpy" | "erratic" | "insufficient_data"
+  lower: number[]
+  upper: number[]
   demand_std: number
+  mase: number | null
+  mape: number | null
+  method: string // selected model, e.g. "Holt-Winters", "Croston-SBA", "TSB"
+  pattern: string // "smooth" | "intermittent" | "lumpy" | "erratic"
 }
 
 export interface ForecastRunResponse {
@@ -184,6 +188,146 @@ export interface PipelineRunOut {
   finished_at: string | null
   duration_seconds: number | null
   error: string | null
+  parameters: Record<string, unknown> | null
+  summary: RunSummary | null
+}
+
+export interface RunSummary {
+  products: number
+  products_optimized: number
+  failures: { product_id: string; errors: string[] }[]
+  fallback_products: string[]
+  series_forecast: number
+  forecast_methods: Record<string, number>
+  demand_patterns: Record<string, number>
+  median_mase: number | null
+  nodes_optimized: number
+  total_safety_stock_units: number
+  safety_stock_value: number
+  holding_cost_per_day: number
+  stockout_alerts: number
+  transportation: {
+    status: string
+    total_cost?: number | null
+    planned_units?: number | null
+    capacity_utilization?: number | null
+    active_lanes?: number | null
+  }
+  horizon: number
+  history_days: number
+  history_end: string
+  duration_seconds: number
+}
+
+// ---- Database-driven network run ----
+
+export interface NetworkRunRequest {
+  run_type?: 'network' | 'scheduled'
+  product_ids?: string[] | null
+  horizon?: number
+  history_days?: number
+  max_service_time?: number
+}
+
+export interface NetworkRunAccepted {
+  pipeline_run_id: string
+  status: string
+}
+
+export interface RunResultOut {
+  id: number
+  pipeline_run_id: string
+  location_id: string | null
+  location_name: string | null
+  location_type: string | null
+  product_id: string | null
+  product_name: string | null
+  sku: string | null
+  s_in: number | null
+  s_out: number | null
+  net_replenishment_time: number | null
+  safety_stock: number | null
+  reorder_point: number | null
+  order_quantity: number | null
+  objective_value: number | null
+  demand_mean: number | null
+  demand_std: number | null
+  service_level: number | null
+}
+
+export interface RunResultsPage {
+  total: number
+  items: RunResultOut[]
+}
+
+// ---- Inventory positions ----
+
+export type PositionStatus = 'STOCKOUT_RISK' | 'REORDER' | 'EXCESS' | 'HEALTHY' | 'NO_PLAN'
+
+export interface InventoryPositionOut {
+  location_id: string
+  location_name: string
+  location_type: string
+  region: string | null
+  product_id: string
+  product_name: string
+  sku: string | null
+  category: string | null
+  unit_cost: number
+  on_hand: number
+  on_order: number
+  in_transit: number
+  inventory_position: number
+  safety_stock: number | null
+  reorder_point: number | null
+  order_quantity: number | null
+  daily_demand: number | null
+  days_of_cover: number | null
+  recommended_order: number
+  status: PositionStatus
+  snapshot_date: string
+}
+
+export interface InventoryPositionsPage {
+  total: number
+  counts: Record<PositionStatus, number>
+  items: InventoryPositionOut[]
+}
+
+// ---- Demand forecast ----
+
+export interface ForecastMetrics {
+  mae: number | null
+  rmse: number | null
+  mape: number | null
+  mase: number | null
+  bias: number | null
+}
+
+export interface ModelScore extends ForecastMetrics {
+  method: string
+  params: Record<string, number>
+  selected: boolean
+}
+
+export interface DemandForecastOut {
+  location_id: string
+  product_id: string
+  pattern: string
+  adi: number | null
+  cv2: number | null
+  mean: number
+  std: number
+  zero_share: number
+  method: string
+  params: Record<string, number>
+  metrics: ForecastMetrics | null
+  demand_mean: number
+  demand_std: number
+  leaderboard: ModelScore[]
+  history: { date: string; quantity: number }[]
+  backtest: { date: string; actual: number; forecast: number }[]
+  forecast: { date: string; forecast: number; lower: number; upper: number }[]
 }
 
 // ---- Lanes ----
@@ -220,6 +364,7 @@ export interface PolicyOut {
   holding_cost: number
   ordering_cost: number
   review_period: number
+  processing_time: number
   created_at: string | null
   updated_at: string | null
 }
@@ -231,6 +376,7 @@ export interface PolicyUpdate {
   holding_cost?: number
   ordering_cost?: number
   review_period?: number
+  processing_time?: number
 }
 
 // ---- Dashboard summary ----
@@ -282,6 +428,7 @@ export interface TransportationPlanOut {
   capacity_utilization: number | null
   active_lanes: number
   lane_flows: LaneFlowOut[]
+  demand_basis: 'forecast' | 'history' | null
 }
 
 // ---- Alerts ----

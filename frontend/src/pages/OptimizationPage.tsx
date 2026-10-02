@@ -1,10 +1,12 @@
-import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { Play } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
+import { ArrowUpRight, Play } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
+import { RunSummaryPanel } from '@/components/RunSummaryPanel'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { FormRow, Input, Textarea } from '@/components/ui/Field'
+import { FormRow, Input, Select, Textarea } from '@/components/ui/Field'
 import { ErrorNotice } from '@/components/ui/Feedback'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Tabs } from '@/components/ui/Tabs'
@@ -39,6 +41,104 @@ function JsonField({ label, value, onChange, rows = 8 }: { label: string; value:
     <FormRow label={label} hint="JSON — leave empty to use the backend default demo network">
       <Textarea rows={rows} value={value} onChange={(e) => onChange(e.target.value)} spellCheck={false} />
     </FormRow>
+  )
+}
+
+const INVALIDATE_AFTER_RUN = ['dashboard-summary', 'inventory-positions', 'alerts', 'runs', 'transportation-plan']
+
+function NetworkRunner() {
+  const queryClient = useQueryClient()
+  const products = useQuery({ queryKey: ['products', 0, 1000], queryFn: () => api.listProducts(0, 1000) })
+  const [productId, setProductId] = useState('')
+  const [horizon, setHorizon] = useState(14)
+  const [historyDays, setHistoryDays] = useState(90)
+  const [maxServiceTime, setMaxServiceTime] = useState(30)
+  const [runId, setRunId] = useState<string | null>(null)
+
+  const start = useMutation({
+    mutationFn: () =>
+      api.runNetwork({
+        product_ids: productId ? [productId] : null,
+        horizon,
+        history_days: historyDays,
+        max_service_time: maxServiceTime,
+      }),
+    onSuccess: (data) => setRunId(data.pipeline_run_id),
+    onError: (err) => {
+      // 409: another run is in progress — follow that one instead.
+      const body = err instanceof ApiError ? (err.details as { detail?: { pipeline_run_id?: string } }) : null
+      if (body?.detail?.pipeline_run_id) setRunId(body.detail.pipeline_run_id)
+    },
+  })
+
+  const run = useQuery({
+    queryKey: ['run', runId],
+    queryFn: () => api.getRun(runId!),
+    enabled: !!runId,
+    refetchInterval: (query) => (query.state.data?.status === 'running' ? 1500 : false),
+  })
+
+  const status = run.data?.status
+  useEffect(() => {
+    if (status && status !== 'running') {
+      for (const key of INVALIDATE_AFTER_RUN) queryClient.invalidateQueries({ queryKey: [key] })
+    }
+  }, [status, queryClient])
+
+  const running = start.isPending || status === 'running'
+
+  return (
+    <Card>
+      <CardHeader
+        title="Network run"
+        description="Uses the data in the database: forecasts every store × SKU, rolls demand up to DCs and suppliers, solves the guaranteed-service model per SKU, then flags stockout risks and plans lane flows."
+      />
+      <CardBody>
+        <div className="flex flex-wrap items-end gap-3">
+          <FormRow label="SKUs">
+            <Select className="w-64" value={productId} onChange={(e) => setProductId(e.target.value)}>
+              <option value="">All SKUs</option>
+              {products.data?.map((p) => (
+                <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>
+              ))}
+            </Select>
+          </FormRow>
+          <FormRow label="Forecast horizon (days)">
+            <Input type="number" min={1} max={90} className="w-32" value={horizon} onChange={(e) => setHorizon(Number(e.target.value))} />
+          </FormRow>
+          <FormRow label="History window (days)">
+            <Input type="number" min={28} max={730} className="w-32" value={historyDays} onChange={(e) => setHistoryDays(Number(e.target.value))} />
+          </FormRow>
+          <FormRow label="Max service time (days)">
+            <Input type="number" min={1} max={365} className="w-32" value={maxServiceTime} onChange={(e) => setMaxServiceTime(Number(e.target.value))} />
+          </FormRow>
+          <Button onClick={() => start.mutate()} loading={running} disabled={running}>
+            <Play className="h-3.5 w-3.5" /> Run network pipeline
+          </Button>
+        </div>
+
+        {start.isError && (
+          <div className="mt-4">
+            <ErrorNotice message={start.error instanceof ApiError ? start.error.message : 'Could not start the run'} />
+          </div>
+        )}
+
+        {run.data && (
+          <div className="mt-5 border-t border-border pt-5">
+            <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+              <StatusBadge status={run.data.status} />
+              {status === 'running' && <span className="text-muted">Forecasting and optimizing…</span>}
+              {run.data.duration_seconds != null && <span className="text-muted">{formatDuration(run.data.duration_seconds)}</span>}
+              <Link to={`/runs/${run.data.id}`} className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline">
+                Open run details <ArrowUpRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+            {run.data.error && <ErrorNotice title="Run failed" message={run.data.error} />}
+            {run.data.summary && <RunSummaryPanel summary={run.data.summary} />}
+          </div>
+        )}
+      </CardBody>
+    </Card>
   )
 }
 
@@ -124,6 +224,7 @@ function GsmRunner() {
                     <th className="py-2 pr-4 font-medium">Net replenishment time</th>
                     <th className="py-2 pr-4 font-medium">Safety stock</th>
                     <th className="py-2 pr-4 font-medium">Reorder point</th>
+                    <th className="py-2 pr-4 font-medium">Order qty (EOQ)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -135,6 +236,7 @@ function GsmRunner() {
                       <td className="py-1.5 pr-4">{r.net_replenishment_time}</td>
                       <td className="py-1.5 pr-4">{formatNumber(r.safety_stock, 1)}</td>
                       <td className="py-1.5 pr-4">{formatNumber(r.reorder_point, 1)}</td>
+                      <td className="py-1.5 pr-4">{formatNumber(r.order_quantity, 0)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -163,7 +265,7 @@ function ForecastRunner() {
 
   return (
     <Card>
-      <CardHeader title="Demand forecast" description="Runs SES / Holt / Croston-SBA depending on demand pattern — no DB persistence" />
+      <CardHeader title="Demand forecast" description="Automatic model selection on your own series — nothing is saved" />
       <CardBody>
         <JsonField label="Items history" value={items} onChange={setItems} rows={6} />
         <div className="mt-4 flex items-end gap-3">
@@ -190,6 +292,7 @@ function ForecastRunner() {
                   <th className="py-2 pr-4 font-medium">Item</th>
                   <th className="py-2 pr-4 font-medium">Pattern</th>
                   <th className="py-2 pr-4 font-medium">Method</th>
+                  <th className="py-2 pr-4 font-medium">MASE</th>
                   <th className="py-2 pr-4 font-medium">Forecast</th>
                 </tr>
               </thead>
@@ -199,6 +302,7 @@ function ForecastRunner() {
                     <td className="py-1.5 pr-4 font-medium text-slate-900">{f.id}</td>
                     <td className="py-1.5 pr-4">{f.pattern}</td>
                     <td className="py-1.5 pr-4">{f.method}</td>
+                    <td className="py-1.5 pr-4">{formatNumber(f.mase, 2)}</td>
                     <td className="py-1.5 pr-4 font-mono text-xs">
                       [{f.forecast.map((v) => formatNumber(v, 1)).join(', ')}]
                     </td>
@@ -324,15 +428,16 @@ export function OptimizationPage() {
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Optimization</h1>
         <p className="mt-1 text-sm text-muted">
-          Run the GSM solver, demand forecasting, or the full daily pipeline on demand.
+          Run the full network pipeline on the database, or experiment with hand-written networks in the sandbox tabs.
         </p>
       </div>
       <Tabs
-        defaultKey="gsm"
+        defaultKey="network"
         tabs={[
-          { key: 'gsm', label: 'GSM Optimization', content: <GsmRunner /> },
-          { key: 'forecast', label: 'Forecast', content: <ForecastRunner /> },
-          { key: 'pipeline', label: 'Full Pipeline', content: <PipelineRunner /> },
+          { key: 'network', label: 'Network run', content: <NetworkRunner /> },
+          { key: 'gsm', label: 'Sandbox: GSM', content: <GsmRunner /> },
+          { key: 'forecast', label: 'Sandbox: Forecast', content: <ForecastRunner /> },
+          { key: 'pipeline', label: 'Sandbox: Pipeline', content: <PipelineRunner /> },
         ]}
       />
     </div>

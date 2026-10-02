@@ -8,7 +8,7 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Badge, StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { ErrorNotice, Spinner } from '@/components/ui/Feedback'
-import { formatDateTime, formatDuration, formatNumber } from '@/lib/utils'
+import { formatCurrency, formatDateTime, formatDuration, formatNumber, humanize } from '@/lib/utils'
 
 export function DashboardPage() {
   const locations = useQuery({ queryKey: ['locations', 0, 1000], queryFn: () => api.listLocations(0, 1000) })
@@ -47,7 +47,7 @@ export function DashboardPage() {
       <PageHeader
         eyebrow="Control tower"
         title="Network position"
-        description="Guaranteed-service model output across suppliers, distribution centers and stores, refreshed by the nightly optimization pipeline."
+        description="Guaranteed-service targets across suppliers, regional DCs and stores, refreshed by each network run (manual or nightly)."
         badges={
           <>
             {lastRun && <Badge tone={lastRun.status === 'success' ? 'ok' : 'danger'}>LAST RUN {lastRun.status.toUpperCase()}</Badge>}
@@ -68,7 +68,7 @@ export function DashboardPage() {
         <StatTileGrid>
           <StatTile
             label="Inventory value"
-            value={`$${formatNumber(summary.data.inventory_value / 1_000_000, 2)}M`}
+            value={formatCurrency(summary.data.inventory_value, true)}
             caption="on hand, at unit cost"
           />
           <StatTile
@@ -78,10 +78,10 @@ export function DashboardPage() {
             caption="policy-weighted target"
           />
           <StatTile
-            label="Fill rate"
+            label="Above safety stock"
             value={summary.data.fill_rate != null ? formatNumber(summary.data.fill_rate * 100, 1) : '—'}
             unit="%"
-            caption="node-SKU pairs above safety stock"
+            caption={summary.data.measured_pairs ? 'of stocked node-SKU pairs' : 'run the network pipeline first'}
           />
           <StatTile
             label="At risk"
@@ -131,7 +131,7 @@ export function DashboardPage() {
                   <tr key={run.id} className="border-b border-border last:border-0 hover:bg-slate-50">
                     <td className="px-5 py-2.5">
                       <Link to={`/runs/${run.id}`} className="font-medium text-brand-600 hover:underline">
-                        {run.run_type}
+                        {humanize(run.run_type)}
                       </Link>
                     </td>
                     <td className="px-5 py-2.5"><StatusBadge status={run.status} /></td>

@@ -1,4 +1,4 @@
-.PHONY: help install dev test lint format migrate seed generate-data run docker-up docker-down
+.PHONY: help install dev test lint format migrate seed generate-data run docker-up docker-down reset-seed makemigrations
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -27,17 +27,20 @@ makemigrations: ## Generate a new database migration
 migrate: ## Run database migrations inside Docker container
 	docker compose exec backend alembic upgrade head
 
-seed: ## Seed database with initial data
+seed: ## Seed database with initial data (keeps existing rows)
 	docker compose exec backend python /scripts/seed_database.py
 
-generate-data: ## Generate synthetic test data locally
-	python3 scripts/generate_data.py --size medium
+reset-seed: ## Wipe all data, including run history, and reseed from the synthetic dataset
+	docker compose exec backend python /scripts/seed_database.py --reset
 
-run: ## Trigger an end-to-end pipeline run on the local backend
-	curl -sS -X POST http://localhost:8000/api/v1/pipeline/run \
+generate-data: ## Generate synthetic test data locally
+	python3 scripts/generate_data.py
+
+run: ## Start a database-driven network pipeline run on the local backend
+	curl -sS -X POST http://localhost:8000/api/v1/network/run \
 		-H "Content-Type: application/json" \
 		-H "Authorization: Bearer $${API_KEY}" \
-		-d '{"run_type": "manual"}'
+		-d '{}'
 
 docker-up: ## Start local docker environment
 	docker compose up -d

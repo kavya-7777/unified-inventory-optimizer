@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, Upload } from 'lucide-react'
-import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api, ApiError } from '@/lib/api'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { StatTile, StatTileGrid } from '@/components/ui/StatTile'
@@ -9,185 +9,202 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Field'
-import { cn, formatNumber } from '@/lib/utils'
+import { cn, formatDate, formatNumber } from '@/lib/utils'
 import { EmptyState, ErrorNotice, Spinner } from '@/components/ui/Feedback'
 import type { DemandRecord } from '@/lib/types'
 
-function useLocationsAndProducts() {
-  const locations = useQuery({ queryKey: ['locations', 0, 100], queryFn: () => api.listLocations(0, 100) })
-  const products = useQuery({ queryKey: ['products', 0, 100], queryFn: () => api.listProducts(0, 100) })
-  return { locations, products }
+const HISTORY_WINDOWS = [56, 90, 120] as const
+const HORIZONS = [7, 14, 28] as const
+
+const PATTERN_HELP: Record<string, string> = {
+  smooth: 'Regular demand — exponential smoothing family',
+  erratic: 'Regular but volatile — exponential smoothing family',
+  intermittent: 'Many zero days — Croston / SBA / TSB',
+  lumpy: 'Many zero days and volatile sizes — Croston / SBA / TSB',
 }
 
-const PERIODS = [7, 14, 28, 56] as const
-
-function mean(values: number[]): number {
-  return values.length ? values.reduce((s, v) => s + v, 0) / values.length : 0
+function Segmented<T extends number>({ options, value, onChange, suffix }: { options: readonly T[]; value: T; onChange: (v: T) => void; suffix: string }) {
+  return (
+    <div className="flex gap-1 rounded-lg border border-border p-1">
+      {options.map((o) => (
+        <button
+          key={o}
+          onClick={() => onChange(o)}
+          className={cn(
+            'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+            value === o ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100',
+          )}
+        >
+          {o}{suffix}
+        </button>
+      ))}
+    </div>
+  )
 }
 
-function stdDev(values: number[]): number {
-  if (values.length < 2) return 0
-  const m = mean(values)
-  return Math.sqrt(values.reduce((s, v) => s + (v - m) ** 2, 0) / values.length)
+function formatParams(params: Record<string, number>): string {
+  const entries = Object.entries(params)
+  return entries.length ? entries.map(([k, v]) => `${k}=${v}`).join(', ') : '—'
 }
 
 function DemandAnalytics() {
-  const { locations, products } = useLocationsAndProducts()
+  const stores = useQuery({ queryKey: ['locations', 'Store'], queryFn: () => api.listLocations(0, 1000, 'Store') })
+  const products = useQuery({ queryKey: ['products', 0, 1000], queryFn: () => api.listProducts(0, 1000) })
   const [locationId, setLocationId] = useState('')
   const [productId, setProductId] = useState('')
-  const [periodDays, setPeriodDays] = useState<(typeof PERIODS)[number]>(28)
+  const [historyDays, setHistoryDays] = useState<(typeof HISTORY_WINDOWS)[number]>(90)
+  const [horizon, setHorizon] = useState<(typeof HORIZONS)[number]>(14)
 
-  const endDate = new Date()
-  const startDate = new Date(endDate.getTime() - periodDays * 86_400_000)
-  const iso = (d: Date) => d.toISOString().slice(0, 10)
-
-  const history = useQuery({
-    queryKey: ['demand-history', locationId, productId, periodDays],
-    queryFn: () => api.getDemandHistory({ location_id: locationId, product_id: productId, start_date: iso(startDate), end_date: iso(endDate) }),
+  const forecast = useQuery({
+    queryKey: ['demand-forecast', locationId, productId, historyDays, horizon],
+    queryFn: () => api.getDemandForecast({ location_id: locationId, product_id: productId, history_days: historyDays, horizon }),
     enabled: !!locationId && !!productId,
   })
 
-  const quantities = useMemo(() => (history.data ?? []).map((r) => r.quantity), [history.data])
-  const stats = useMemo(() => {
-    const m = mean(quantities)
-    const sd = stdDev(quantities)
-    const zeroDays = quantities.filter((q) => q === 0).length
-    return {
-      mean: m,
-      stdDev: sd,
-      cv: m > 0 ? sd / m : null,
-      zeroDemandPct: quantities.length ? (zeroDays / quantities.length) * 100 : null,
-    }
-  }, [quantities])
-
-  // Classification badge (pattern/method) over the full selected window.
-  const classification = useQuery({
-    queryKey: ['forecast-classify', locationId, productId, periodDays, quantities.length],
-    queryFn: () => api.runForecast({ items: [{ id: 'selection', history: quantities }], horizon: 1 }),
-    enabled: quantities.length >= 4,
-  })
-
-  // Backtest for MAPE/bias: train on the first ~70%, forecast the rest, compare to actual.
-  const splitIdx = Math.floor(quantities.length * 0.7)
-  const train = quantities.slice(0, splitIdx)
-  const test = quantities.slice(splitIdx)
-  const backtest = useQuery({
-    queryKey: ['forecast-backtest', locationId, productId, periodDays, quantities.length],
-    queryFn: () => api.runForecast({ items: [{ id: 'selection', history: train }], horizon: test.length }),
-    enabled: quantities.length >= 8 && test.length > 0,
-  })
-
-  const accuracy = useMemo(() => {
-    const forecast = backtest.data?.forecasts[0]?.forecast
-    if (!forecast || forecast.length !== test.length) return { mape: null as number | null, bias: null as number | null }
-    const pairs = test.map((actual, i) => ({ actual, forecast: forecast[i] })).filter((p) => p.actual > 0)
-    if (pairs.length === 0) return { mape: null, bias: null }
-    const mape = mean(pairs.map((p) => Math.abs(p.actual - p.forecast) / p.actual)) * 100
-    const bias = mean(pairs.map((p) => (p.forecast - p.actual) / p.actual)) * 100
-    return { mape, bias }
-  }, [backtest.data, test])
-
   const chartData = useMemo(() => {
-    const rows = (history.data ?? []).map((r, i) => ({ date: r.date, actual: r.quantity, forecast: undefined as number | undefined, isTest: i >= splitIdx }))
-    const forecastValues = backtest.data?.forecasts[0]?.forecast
-    if (forecastValues) {
-      rows.forEach((row, i) => {
-        if (i >= splitIdx) row.forecast = forecastValues[i - splitIdx]
-      })
-    }
+    const f = forecast.data
+    if (!f) return []
+    const backtest = new Map(f.backtest.map((b) => [b.date, b.forecast]))
+    const rows: { date: string; actual?: number; backtest?: number; forecast?: number; band?: [number, number] }[] =
+      f.history.map((h) => ({ date: h.date, actual: h.quantity, backtest: backtest.get(h.date) }))
+    for (const p of f.forecast) rows.push({ date: p.date, forecast: p.forecast, band: [p.lower, p.upper] })
     return rows
-  }, [history.data, backtest.data, splitIdx])
+  }, [forecast.data])
 
-  const pattern = classification.data?.forecasts[0]?.pattern
-  const method = classification.data?.forecasts[0]?.method
+  const f = forecast.data
 
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
         eyebrow="Signal"
         title="Demand & forecast"
-        description="Demand history drives pattern classification, which selects the forecast method: Holt-DES for smooth series, SES for erratic, Croston-SBA for intermittent and lumpy."
+        description="Each series is classified by its demand pattern, every suitable model is backtested on the most recent weeks, and the most accurate one (lowest MASE) produces the forecast."
         badges={
-          <>
-            {method && <Badge tone="brand">{method.toUpperCase()}</Badge>}
-            {pattern && pattern !== 'insufficient_data' && <Badge tone="neutral">{pattern.toUpperCase()}</Badge>}
-          </>
+          f && (
+            <>
+              <Badge tone="brand">{f.method.toUpperCase()}</Badge>
+              <Badge tone="neutral">{f.pattern.toUpperCase()}</Badge>
+            </>
+          )
         }
       />
       <Card>
-      <CardBody>
-        <div className="flex flex-wrap items-center gap-3">
-          <Select className="w-56" value={locationId} onChange={(e) => setLocationId(e.target.value)}>
-            <option value="">Select location…</option>
-            {locations.data?.map((l) => (
-              <option key={l.id} value={l.id}>{l.name}</option>
-            ))}
-          </Select>
-          <Select className="w-56" value={productId} onChange={(e) => setProductId(e.target.value)}>
-            <option value="">Select SKU…</option>
-            {products.data?.map((p) => (
-              <option key={p.id} value={p.id}>{p.sku ? `${p.sku} — ${p.name}` : p.name}</option>
-            ))}
-          </Select>
-          <div className="flex gap-1 rounded-lg border border-border p-1">
-            {PERIODS.map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriodDays(p)}
-                className={cn(
-                  'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                  periodDays === p ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100',
-                )}
-              >
-                {p}d
-              </button>
-            ))}
+        <CardBody>
+          <div className="flex flex-wrap items-center gap-3">
+            <Select className="w-64" value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+              <option value="">Select store…</option>
+              {stores.data?.map((l) => (
+                <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
+            </Select>
+            <Select className="w-64" value={productId} onChange={(e) => setProductId(e.target.value)}>
+              <option value="">Select SKU…</option>
+              {products.data?.map((p) => (
+                <option key={p.id} value={p.id}>{p.sku ? `${p.sku} — ${p.name}` : p.name}</option>
+              ))}
+            </Select>
+            <div className="flex items-center gap-2 text-xs text-muted">
+              History <Segmented options={HISTORY_WINDOWS} value={historyDays} onChange={setHistoryDays} suffix="d" />
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted">
+              Horizon <Segmented options={HORIZONS} value={horizon} onChange={setHorizon} suffix="d" />
+            </div>
           </div>
-        </div>
 
-        <div className="mt-5">
-          {!locationId || !productId ? (
-            <EmptyState title="Choose a location and SKU" description="Stats and a history/forecast chart will appear here." />
-          ) : history.isLoading ? (
-            <Spinner />
-          ) : history.isError ? (
-            <ErrorNotice message={history.error instanceof ApiError ? history.error.message : 'Failed to load demand history'} />
-          ) : history.data && history.data.length === 0 ? (
-            <EmptyState title="No demand history" description="No records for this location/SKU/period." />
-          ) : (
-            <>
-              <StatTileGrid>
-                <StatTile label={`Mean (${periodDays}d)`} value={formatNumber(stats.mean, 1)} unit="u/day" />
-                <StatTile label={`Std dev (${periodDays}d)`} value={formatNumber(stats.stdDev, 1)} unit="u" />
-                <StatTile label="CV" value={stats.cv != null ? formatNumber(stats.cv, 2) : '—'} />
-                <StatTile label="Zero-demand days" value={stats.zeroDemandPct != null ? formatNumber(stats.zeroDemandPct, 0) : '—'} unit="%" />
-                <StatTile
-                  label="MAPE"
-                  value={accuracy.mape != null ? formatNumber(accuracy.mape, 1) : '—'}
-                  unit="%"
-                  caption={accuracy.bias != null ? `bias ${accuracy.bias >= 0 ? '+' : ''}${formatNumber(accuracy.bias, 1)}%` : undefined}
-                  tone={accuracy.mape != null && accuracy.mape > 50 ? 'warn' : 'default'}
-                />
-              </StatTileGrid>
+          <div className="mt-5">
+            {!locationId || !productId ? (
+              <EmptyState title="Choose a store and SKU" description="The forecast, its accuracy and a comparison of every candidate model will appear here." />
+            ) : forecast.isLoading ? (
+              <Spinner />
+            ) : forecast.isError ? (
+              <ErrorNotice message={forecast.error instanceof ApiError ? forecast.error.message : 'Failed to load forecast'} />
+            ) : f ? (
+              <>
+                <StatTileGrid>
+                  <StatTile
+                    label="Demand pattern"
+                    value={f.pattern.charAt(0).toUpperCase() + f.pattern.slice(1)}
+                    caption={f.adi != null && f.cv2 != null ? `ADI ${formatNumber(f.adi, 2)} · CV² ${formatNumber(f.cv2, 2)}` : PATTERN_HELP[f.pattern]}
+                  />
+                  <StatTile label="Selected model" value={f.method} caption={formatParams(f.params)} />
+                  <StatTile
+                    label="MASE (holdout)"
+                    value={f.metrics?.mase != null ? formatNumber(f.metrics.mase, 2) : '—'}
+                    caption="< 1 beats a seasonal-naive forecast"
+                    tone={f.metrics?.mase != null && f.metrics.mase > 1 ? 'warn' : 'ok'}
+                  />
+                  <StatTile
+                    label="MAPE (holdout)"
+                    value={f.metrics?.mape != null ? formatNumber(f.metrics.mape, 1) : '—'}
+                    unit="%"
+                    caption={f.metrics?.bias != null ? `bias ${f.metrics.bias >= 0 ? '+' : ''}${formatNumber(f.metrics.bias, 2)} u/day` : undefined}
+                  />
+                  <StatTile
+                    label="Forecast demand"
+                    value={formatNumber(f.demand_mean, 1)}
+                    unit="u/day"
+                    caption={`error σ ${formatNumber(f.demand_std, 2)} u — drives safety stock`}
+                  />
+                </StatTileGrid>
 
-              <div className="mt-5 h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Line type="monotone" dataKey="actual" name="Actual" stroke="#4f46e5" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="forecast" name="Forecast (backtest)" stroke="#d97706" strokeWidth={2} strokeDasharray="4 3" dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </>
-          )}
-        </div>
-      </CardBody>
+                <div className="mt-5 h-72 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={formatDate} minTickGap={24} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip labelFormatter={(d) => formatDate(String(d))} formatter={(v) => (Array.isArray(v) ? v.map((x) => formatNumber(Number(x), 1)).join(' – ') : formatNumber(Number(v), 1))} />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Area dataKey="band" name="95% interval" stroke="none" fill="#6366f1" fillOpacity={0.12} />
+                      <Line type="monotone" dataKey="actual" name="Actual" stroke="#0f172a" strokeWidth={1.5} dot={false} />
+                      <Line type="monotone" dataKey="backtest" name="Backtest" stroke="#d97706" strokeWidth={2} strokeDasharray="4 3" dot={false} />
+                      <Line type="monotone" dataKey="forecast" name="Forecast" stroke="#4f46e5" strokeWidth={2} dot={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </CardBody>
       </Card>
+
+      {f && f.leaderboard.length > 0 && (
+        <Card>
+          <CardHeader title="Model comparison" description="Every candidate is fitted on the training window and scored on the holdout window; lowest MASE wins" />
+          <CardBody className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
+                    <th className="px-5 py-2.5 font-medium">Model</th>
+                    <th className="px-5 py-2.5 font-medium">Parameters</th>
+                    <th className="px-5 py-2.5 text-right font-medium">MASE</th>
+                    <th className="px-5 py-2.5 text-right font-medium">MAE</th>
+                    <th className="px-5 py-2.5 text-right font-medium">RMSE</th>
+                    <th className="px-5 py-2.5 text-right font-medium">MAPE</th>
+                    <th className="px-5 py-2.5 text-right font-medium">Bias</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {f.leaderboard.map((m) => (
+                    <tr key={m.method} className={cn('border-b border-border last:border-0', m.selected && 'bg-brand-50/50')}>
+                      <td className="px-5 py-2 font-medium text-slate-900">
+                        {m.method} {m.selected && <Badge tone="brand">selected</Badge>}
+                      </td>
+                      <td className="px-5 py-2 font-mono text-xs text-muted">{formatParams(m.params)}</td>
+                      <td className="px-5 py-2 text-right">{formatNumber(m.mase, 3)}</td>
+                      <td className="px-5 py-2 text-right text-muted">{formatNumber(m.mae, 2)}</td>
+                      <td className="px-5 py-2 text-right text-muted">{formatNumber(m.rmse, 2)}</td>
+                      <td className="px-5 py-2 text-right text-muted">{m.mape != null ? `${formatNumber(m.mape, 1)}%` : '—'}</td>
+                      <td className="px-5 py-2 text-right text-muted">{formatNumber(m.bias, 2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardBody>
+        </Card>
+      )}
     </div>
   )
 }
@@ -204,7 +221,8 @@ function emptyRow(): DraftRow {
 }
 
 function IngestForm() {
-  const { locations, products } = useLocationsAndProducts()
+  const locations = useQuery({ queryKey: ['locations', 'Store'], queryFn: () => api.listLocations(0, 1000, 'Store') })
+  const products = useQuery({ queryKey: ['products', 0, 1000], queryFn: () => api.listProducts(0, 1000) })
   const queryClient = useQueryClient()
   const [rows, setRows] = useState<DraftRow[]>([emptyRow()])
 
@@ -212,7 +230,7 @@ function IngestForm() {
     mutationFn: (records: DemandRecord[]) => api.ingestDemand(records),
     onSuccess: () => {
       setRows([emptyRow()])
-      queryClient.invalidateQueries({ queryKey: ['demand-history'] })
+      queryClient.invalidateQueries({ queryKey: ['demand-forecast'] })
     },
   })
 
@@ -240,7 +258,7 @@ function IngestForm() {
                 <option value="">Product…</option>
                 {products.data?.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}
+                    {p.sku ? `${p.sku} — ${p.name}` : p.name}
                   </option>
                 ))}
               </Select>
@@ -294,9 +312,12 @@ function IngestForm() {
           </div>
         )}
         {mutation.isSuccess && (
-          <p className="mt-3 text-sm text-ok-700">
-            Ingested {mutation.data.inserted_count} record{mutation.data.inserted_count === 1 ? '' : 's'}.
-          </p>
+          <div className="mt-3 text-sm">
+            <p className="text-ok-700">
+              {mutation.data.inserted_count} inserted · {mutation.data.updated_count} updated · {mutation.data.ignored_count} ignored
+            </p>
+            {mutation.data.errors.length > 0 && <p className="mt-1 text-danger-700">{mutation.data.errors.join('; ')}</p>}
+          </div>
         )}
       </CardBody>
     </Card>

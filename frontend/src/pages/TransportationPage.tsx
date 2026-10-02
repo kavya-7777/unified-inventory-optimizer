@@ -7,12 +7,12 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Select } from '@/components/ui/Field'
 import { EmptyState, ErrorNotice, Spinner } from '@/components/ui/Feedback'
-import { formatNumber } from '@/lib/utils'
+import { formatCurrency, formatNumber } from '@/lib/utils'
 
 export function TransportationPage() {
   const [productId, setProductId] = useState<string>('')
 
-  const products = useQuery({ queryKey: ['products', 0, 100], queryFn: () => api.listProducts(0, 100) })
+  const products = useQuery({ queryKey: ['products', 0, 1000], queryFn: () => api.listProducts(0, 1000) })
   const plan = useQuery({
     queryKey: ['transportation-plan', productId],
     queryFn: () => api.getTransportationPlan(productId ? { product_id: productId } : {}),
@@ -23,7 +23,24 @@ export function TransportationPage() {
       <PageHeader
         eyebrow="Flow plan"
         title="Transportation"
-        description="Lane-level replenishment quantities produced by the optimization run, with capacity utilization and cost."
+        description="Daily lane × SKU flows that cover store demand at minimum freight cost without exceeding any lane's capacity. Each SKU only moves between locations that carry it."
+        badges={
+          plan.data?.demand_basis && (
+            <Badge tone={plan.data.demand_basis === 'forecast' ? 'brand' : 'neutral'}>
+              {plan.data.demand_basis === 'forecast' ? 'DEMAND: LATEST FORECAST' : 'DEMAND: 28-DAY HISTORY'}
+            </Badge>
+          )
+        }
+        actions={
+          <Select className="w-64" value={productId} onChange={(e) => setProductId(e.target.value)}>
+            <option value="">All SKUs</option>
+            {products.data?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.sku} — {p.name}
+              </option>
+            ))}
+          </Select>
+        }
       />
 
       {plan.isLoading && <Spinner />}
@@ -47,8 +64,8 @@ export function TransportationPage() {
       {plan.data && plan.data.status === 'OPTIMAL' && (
         <>
           <StatTileGrid>
-            <StatTile label="Planned units" value={formatNumber(plan.data.planned_units, 0)} unit="u" />
-            <StatTile label="Transport cost" value={`$${formatNumber(plan.data.total_cost / 1000, 1)}`} unit="K" />
+            <StatTile label="Planned units" value={formatNumber(plan.data.planned_units, 0)} unit="u/day" />
+            <StatTile label="Transport cost" value={formatCurrency(plan.data.total_cost)} unit="/day" />
             <StatTile
               label="Capacity utilization"
               value={plan.data.capacity_utilization != null ? formatNumber(plan.data.capacity_utilization * 100, 1) : '—'}
@@ -63,20 +80,7 @@ export function TransportationPage() {
           </StatTileGrid>
 
           <Card>
-            <CardHeader
-              title="Lane flows"
-              description="Source → target movements per SKU"
-              action={
-                <Select className="w-40" value={productId} onChange={(e) => setProductId(e.target.value)}>
-                  <option value="">All SKUs</option>
-                  {products.data?.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.sku ?? p.name}
-                    </option>
-                  ))}
-                </Select>
-              }
-            />
+            <CardHeader title="Lane flows" description="Source → target movements per SKU, units per day" />
             <CardBody className="p-0">
               {plan.data.lane_flows.length === 0 && (
                 <EmptyState title="No flows" description="The plan produced no positive flows for this selection." />
@@ -105,8 +109,8 @@ export function TransportationPage() {
                           <td className="px-4 py-2 whitespace-nowrap">
                             {flow.target_name} <Badge tone="neutral">{flow.target_type}</Badge>
                           </td>
-                          <td className="px-4 py-2 text-muted">{flow.sku ?? flow.product_name}</td>
-                          <td className="px-4 py-2">{formatNumber(flow.quantity, 0)}</td>
+                          <td className="px-4 py-2 text-muted" title={flow.product_name}>{flow.sku} · {flow.product_name}</td>
+                          <td className="px-4 py-2">{formatNumber(flow.quantity, 1)}</td>
                           <td className="px-4 py-2 text-muted">{flow.capacity != null ? formatNumber(flow.capacity, 0) : '—'}</td>
                           <td className="px-4 py-2">
                             {flow.utilization != null ? (
@@ -124,7 +128,7 @@ export function TransportationPage() {
                             )}
                           </td>
                           <td className="px-4 py-2 text-muted">{flow.transit_time ?? '—'}d</td>
-                          <td className="px-4 py-2 text-muted">${formatNumber(flow.cost, 0)}</td>
+                          <td className="px-4 py-2 text-muted">{formatCurrency(flow.cost)}</td>
                         </tr>
                       ))}
                     </tbody>

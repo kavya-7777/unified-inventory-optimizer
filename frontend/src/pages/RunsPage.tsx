@@ -6,7 +6,7 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/Badge'
 import { ErrorNotice, EmptyState, Spinner } from '@/components/ui/Feedback'
 import { Select } from '@/components/ui/Field'
-import { formatDateTime, formatDuration } from '@/lib/utils'
+import { formatDateTime, formatDuration, humanize } from '@/lib/utils'
 
 export function RunsPage() {
   const [limit, setLimit] = useState(10)
@@ -54,7 +54,7 @@ export function RunsPage() {
                   <tr key={run.id} className="border-b border-border last:border-0 hover:bg-slate-50">
                     <td className="px-5 py-2.5">
                       <Link to={`/runs/${run.id}`} className="font-medium text-brand-600 hover:underline">
-                        {run.run_type}
+                        {humanize(run.run_type)}
                       </Link>
                     </td>
                     <td className="px-5 py-2.5"><StatusBadge status={run.status} /></td>

@@ -30,6 +30,7 @@ def _to_policy_out(
         holding_cost=policy.holding_cost or 0.0,
         ordering_cost=policy.ordering_cost or 0.0,
         review_period=policy.review_period or 1,
+        processing_time=policy.processing_time or 0,
         created_at=policy.created_at,
         updated_at=policy.updated_at,
     )
