@@ -85,8 +85,9 @@ alerts.
 **Point at:**
 
 - The zig-zag in the chart: sales peak every Friday to Sunday.
-- **Selected model:** usually **Holt-Winters**, the model that captures a weekly cycle (the
-  winner can change from day to day, since the data is regenerated when you seed).
+- **Selected model:** a model that captures the weekly cycle, usually **Seasonal Naive** or
+  **Holt-Winters**. The winner can change from day to day, because the data is regenerated
+  when you seed, so read it off the screen rather than naming it in advance.
 - **MASE below 1**: it beats a "same as last week" forecast.
 - The orange dashed **Backtest** line over the last two weeks, and the shaded **95% interval**
   on the forecast.
@@ -98,13 +99,14 @@ alerts.
 > 1,000 store-product combinations."
 
 **Then select:** **Hampankatta Store, Mangaluru** and **ELE-008 — Table Fan 400 mm**. The
-pattern badge shows **INTERMITTENT** and the selected model is from the Croston family
-(Croston, Croston-SBA or TSB).
+pattern badge shows **INTERMITTENT**, and the **Model comparison** table now lists the
+intermittent-demand models (Croston, Croston-SBA, TSB) instead of the seasonal ones.
 
 **Say:**
-> "A table fan sells on very few days. That's intermittent demand, so the system switches to
-> Croston-family models, which forecast how much sells and how often separately. And note the
-> error σ under the forecast — that number, not raw demand, is what drives safety stock."
+> "A table fan sells on very few days. That's intermittent demand, so the system swaps in a
+> different set of candidates — Croston-type models that forecast how much sells and how
+> often, separately — and still lets the backtest pick the winner. And note the error σ
+> under the forecast — that number, not raw demand, is what drives safety stock."
 
 ### Step 4 — Optimization: run the pipeline live (2 min)
 

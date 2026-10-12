@@ -45,7 +45,7 @@ Access the apps:
 
 Trigger a full pipeline run from the terminal with `make run`, or from the Optimization page in the UI.
 
-Project walkthrough: [docs/PROJECT_GUIDE.md](docs/PROJECT_GUIDE.md) · Demo script: [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md)
+Project overview: [docs/PROJECT_GUIDE.md](docs/PROJECT_GUIDE.md) · How it works, step by step: [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) · Demo script: [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md)
 
 ## Environment Variables
 See `.env.example`. Never commit `.env` or any secrets.
