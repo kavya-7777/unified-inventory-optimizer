@@ -1,5 +1,5 @@
 """
-MEIO Backend Test Suite.
+Unified Inventory Optimizer Backend Test Suite.
 Covers: API endpoints, optimizer known-answer tests, and forecasting accuracy.
 """
 import math

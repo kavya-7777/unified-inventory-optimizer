@@ -11,7 +11,7 @@ import { formatCurrency, formatNumber } from '@/lib/utils'
 
 const GROUPS: { type: string; title: string; description: string }[] = [
   { type: 'Supplier', title: 'Suppliers', description: 'External supply, unconstrained upstream' },
-  { type: 'DC', title: 'Distribution centers', description: 'Pooling echelon, decoupling stock' },
+  { type: 'DC', title: 'Distribution centers', description: 'Pooling tier, decoupling stock' },
   { type: 'Store', title: 'Stores', description: 'Customer-facing, demand origin' },
 ]
 
@@ -52,7 +52,7 @@ export function NetworkPage() {
       <PageHeader
         eyebrow="Topology"
         title="Supply network"
-        description="Three-echelon network: suppliers make the goods, regional DCs pool stock, stores serve customers. Lane transit times and each node's processing time determine how much safety stock every node needs."
+        description="Three-tier network: suppliers make the goods, regional DCs pool stock, stores serve customers. Lane transit times and each node's processing time determine how much safety stock every node needs."
         badges={
           <>
             <Badge tone="neutral">{(locations.data ?? []).length} NODES</Badge>

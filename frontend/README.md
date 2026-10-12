@@ -1,6 +1,6 @@
-# MEIO Platform — Frontend
+# Unified Inventory Optimizer — Frontend
 
-React + TypeScript + Vite dashboard for the Multi-Echelon Inventory Optimization (MEIO) backend.
+React + TypeScript + Vite dashboard for the Unified Inventory Optimizer backend.
 
 ## Stack
 

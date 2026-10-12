@@ -1,13 +1,13 @@
-# MEIO Platform
+# Unified Inventory Optimizer
 
-Multi-Echelon Inventory Optimization (MEIO) Platform.
+Unified Inventory Optimization platform: forecasting, safety-stock placement and transportation planning across suppliers, DCs and stores in one model.
 
 ## Architecture
 ```mermaid
 graph TD
     A[React Frontend] -->|HTTPS| B(FastAPI Backend)
     B --> C[(PostgreSQL)]
-    B --> D[MEIO Optimization Engine]
+    B --> D[Unified Optimization Engine]
     D --> E[Forecasting]
     D --> F[GSM]
     D --> G[CP-SAT / LP]
@@ -29,7 +29,7 @@ graph TD
 - `.github/`: CI/CD workflows and issue templates
 
 ## Local Setup
-1. Clone the repository: `git clone <repo> && cd meio-platform`
+1. Clone the repository: `git clone <repo> && cd unified-inventory-optimizer`
 2. Set environment variables: `cp .env.example .env` and `cp frontend/.env.example frontend/.env`
 3. Start Postgres, FastAPI and React: `sudo docker compose up -d --build`
 4. Run migrations: `sudo make migrate`
@@ -66,7 +66,7 @@ GitHub Actions run on every push to `develop` and `main`, as well as on PRs.
 - `frontend-ci.yml`: Node linting, typing, and build.
 - `deploy.yml`: Staging deployment from `develop`, production from `main`.
 
-## MEIO Pipeline
+## Optimization Pipeline
 `POST /api/v1/network/run` (the Optimization page's **Network run**, `make run`, or the nightly
 workflow) runs in the background on the data in the database:
 1. **Forecast** every store × SKU series: classify the demand pattern (ADI / CV²), backtest

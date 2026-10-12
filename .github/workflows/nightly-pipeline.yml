@@ -1,4 +1,4 @@
-name: Nightly MEIO Pipeline
+name: Nightly Optimization Pipeline
 
 on:
   schedule:
@@ -9,7 +9,7 @@ jobs:
   run-pipeline:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger MEIO Pipeline
+      - name: Trigger Optimization Pipeline
         env:
           API_URL: ${{ secrets.PROD_API_URL }}
           PIPELINE_SECRET: ${{ secrets.PIPELINE_SECRET }}

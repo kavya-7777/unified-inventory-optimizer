@@ -1,5 +1,5 @@
 """
-MEIO Platform — FastAPI Application Entry Point.
+Unified Inventory Optimizer — FastAPI Application Entry Point.
 """
 import logging
 import time
@@ -21,9 +21,9 @@ logging.basicConfig(level=settings.LOG_LEVEL)
 log = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="MEIO Platform API",
+    title="Unified Inventory Optimizer API",
     version="1.0.0",
-    description="Multi-Echelon Inventory Optimization Platform",
+    description="Unified Inventory Optimization Platform",
 )
 
 origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]

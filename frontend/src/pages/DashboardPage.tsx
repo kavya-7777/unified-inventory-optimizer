@@ -24,7 +24,7 @@ export function DashboardPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Multi-Echelon Inventory Optimization</h1>
+          <h1 className="text-xl font-semibold text-slate-900">Unified Inventory Optimization</h1>
           <p className="mt-1 text-sm text-muted">
             {nodeCount != null ? `${nodeCount} nodes` : '— nodes'} · {skuCount != null ? `${skuCount} SKUs` : '— SKUs'} · Guaranteed-service network
           </p>

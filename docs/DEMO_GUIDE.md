@@ -61,7 +61,7 @@ before every demo, and again afterwards to undo any live changes.
 > location has to decide how much stock to hold. Too little and shelves go empty; too much and
 > money sits idle. The catch is that the levels affect each other — a big buffer at the
 > warehouse lets stores hold less. This platform decides all levels together. That's called
-> multi-echelon inventory optimization."
+> unified inventory optimization."
 
 Point at the tiles: inventory value, share of stock above safety stock, items at risk, open
 alerts.

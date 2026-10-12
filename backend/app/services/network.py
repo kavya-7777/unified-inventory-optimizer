@@ -1,5 +1,5 @@
 """
-Database-driven MEIO pipeline.
+Database-driven unified optimization pipeline.
 
 1. Forecast every store x SKU demand series (automatic model selection).
 2. Roll forecast demand up the network to DCs and suppliers.

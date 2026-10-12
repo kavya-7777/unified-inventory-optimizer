@@ -60,7 +60,7 @@ export function AppLayout() {
             <Boxes className="h-4.5 w-4.5" />
           </div>
           <div>
-            <p className="text-sm font-semibold leading-tight text-slate-900">MEIO Platform</p>
+            <p className="text-sm font-semibold leading-tight text-slate-900">Unified Inventory Optimizer</p>
             <p className="text-xs leading-tight text-muted">Inventory optimizer</p>
           </div>
         </div>
@@ -91,7 +91,7 @@ export function AppLayout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-border bg-white px-6 py-3.5 sm:px-8">
-          <p className="text-sm font-medium text-slate-500 sm:hidden">MEIO Platform</p>
+          <p className="text-sm font-medium text-slate-500 sm:hidden">Unified Inventory Optimizer</p>
           <div className="hidden sm:block" />
           <HealthPill />
         </header>

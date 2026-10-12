@@ -1,5 +1,5 @@
 """
-MEIO Optimization Pipeline Runner.
+Unified Optimization Pipeline Runner.
 Orchestrates: Network Validation → CP-SAT (GSM) → Heuristic Fallback → SS, ROP, EOQ
 """
 import logging
@@ -29,7 +29,7 @@ DEFAULT_MAX_SERVICE_TIME = 30
 
 def run_optimization_pipeline(params: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Main MEIO optimization entrypoint.
+    Main unified optimization entrypoint.
 
     Raises NetworkValidationError if the network is malformed.
     """

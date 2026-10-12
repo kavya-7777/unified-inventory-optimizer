@@ -1,6 +1,6 @@
 """
 Guaranteed Service Model (GSM) - Core Model Logic.
-Implements the echelon stock formulation for multi-echelon inventory networks.
+Implements the echelon stock formulation for unified (multi-tier) inventory networks.
 """
 from collections import defaultdict, deque
 from dataclasses import dataclass, field

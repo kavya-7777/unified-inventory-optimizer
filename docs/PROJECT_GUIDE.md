@@ -14,8 +14,9 @@ supplied by 5 factories. Every location must decide how much stock to keep:
 
 The difficulty is that the locations affect each other. If the Chennai DC keeps a large buffer,
 its stores can keep small ones, and the reverse. Optimizing each location separately wastes
-money. **Multi-Echelon Inventory Optimization (MEIO)** decides all levels together. An
-"echelon" is one level of the chain: suppliers, then DCs, then stores.
+money. **Unified Inventory Optimization** decides all three levels (suppliers, DCs and stores)
+together, in one model. In textbooks and research papers this technique is called
+*multi-echelon inventory optimization*, where an "echelon" is one level of the chain.
 
 ---
 
@@ -169,7 +170,8 @@ will differ slightly; the pattern stays the same.
 - **The DC holds the pooled buffer.** It promises stores immediate shipment (`S_out = 0`), so
   each store only needs to cover its 1-day transit.
 
-This is the textbook MEIO result: pool safety stock centrally and keep stores lean.
+This is the textbook result of unified optimization: pool safety stock centrally and keep
+stores lean.
 
 ---
 
