@@ -6,16 +6,8 @@ import { PageHeader } from '@/components/ui/PageHeader'
 import { StatTile, StatTileGrid } from '@/components/ui/StatTile'
 import { Badge } from '@/components/ui/Badge'
 import { ErrorNotice, Spinner } from '@/components/ui/Feedback'
-import { formatNumber } from '@/lib/utils'
-import type { LocationOut } from '@/lib/types'
-
-/** Short display code, e.g. "Reno West DC" (DC) -> "DC-RENO". Cosmetic only — the
- * real primary key is a UUID, not fit for display. */
-function shortCode(location: LocationOut): string {
-  const prefix = { Supplier: 'SUP', DC: 'DC', Store: 'STR' }[location.type] ?? location.type.slice(0, 3).toUpperCase()
-  const letters = location.name.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 5)
-  return `${prefix}-${letters}`
-}
+import { Card, CardHeader } from '@/components/ui/Card'
+import { formatCurrency, formatNumber } from '@/lib/utils'
 
 const GROUPS: { type: string; title: string; description: string }[] = [
   { type: 'Supplier', title: 'Suppliers', description: 'External supply, unconstrained upstream' },
@@ -60,7 +52,7 @@ export function NetworkPage() {
       <PageHeader
         eyebrow="Topology"
         title="Supply network"
-        description="Three-echelon network. Lane transit times feed the guaranteed-service model as processing times; service-time decisions propagate downstream."
+        description="Three-echelon network: suppliers make the goods, regional DCs pool stock, stores serve customers. Lane transit times and each node's processing time determine how much safety stock every node needs."
         badges={
           <>
             <Badge tone="neutral">{(locations.data ?? []).length} NODES</Badge>
@@ -76,7 +68,7 @@ export function NetworkPage() {
         <>
           <StatTileGrid>
             <StatTile label="Avg inbound transit" value={formatNumber(stats.avgTransit, 1)} unit="days" />
-            <StatTile label="Avg lane cost" value={`$${formatNumber(stats.avgCost, 2)}`} unit="/unit" />
+            <StatTile label="Avg lane cost" value={formatCurrency(stats.avgCost)} unit="/unit" />
             <StatTile label="Stocking nodes" value={String(stats.stockingNodes)} />
           </StatTileGrid>
 
@@ -100,7 +92,7 @@ export function NetworkPage() {
                         <div key={loc.id} className="flex items-center justify-between px-4 py-2.5">
                           <div>
                             <p className="text-sm font-medium text-slate-900">{loc.name}</p>
-                            <p className="font-mono text-xs text-slate-400">{shortCode(loc)}</p>
+                            <p className="font-mono text-xs text-slate-400">{loc.id}</p>
                           </div>
                           <div className="flex items-center gap-2 text-right">
                             {atRisk && (
@@ -121,6 +113,38 @@ export function NetworkPage() {
               )
             })}
           </div>
+
+          <Card>
+            <CardHeader title="Lanes" description="Transport links: days in transit, freight cost per unit and daily capacity" />
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
+                    <th className="px-5 py-2.5 font-medium">From</th>
+                    <th className="px-5 py-2.5 font-medium">To</th>
+                    <th className="px-5 py-2.5 text-right font-medium">Transit</th>
+                    <th className="px-5 py-2.5 text-right font-medium">Cost / unit</th>
+                    <th className="px-5 py-2.5 text-right font-medium">Capacity / day</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(lanes.data ?? []).map((lane) => (
+                    <tr key={lane.id} className="border-b border-border last:border-0 hover:bg-slate-50">
+                      <td className="whitespace-nowrap px-5 py-2">
+                        {lane.source_name} <Badge tone="neutral">{lane.source_type}</Badge>
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-2">
+                        {lane.target_name} <Badge tone="neutral">{lane.target_type}</Badge>
+                      </td>
+                      <td className="px-5 py-2 text-right">{lane.transit_time} d</td>
+                      <td className="px-5 py-2 text-right text-muted">{formatCurrency(lane.cost_per_unit)}</td>
+                      <td className="px-5 py-2 text-right text-muted">{lane.capacity != null ? formatNumber(lane.capacity) : 'Unlimited'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
         </>
       )}
     </div>

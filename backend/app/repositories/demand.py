@@ -6,7 +6,6 @@ from sqlalchemy import func, select, tuple_
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
-from app.models.base import utcnow
 from app.models.inventory import DemandHistory, Location, Product
 
 BATCH_SIZE = 1000
@@ -117,8 +116,11 @@ class DemandRepository:
         product_id: Optional[str] = None,
         days: int = 28,
     ) -> List[Tuple[str, str, float]]:
-        """Average daily demand per (location_id, product_id) over the trailing `days`."""
-        cutoff = utcnow() - timedelta(days=days)
+        """Average daily demand per (location_id, product_id) over the last `days` of history."""
+        end = self.latest_date()
+        if end is None:
+            return []
+        cutoff = end - timedelta(days=days - 1)
         query = (
             self.db.query(
                 DemandHistory.location_id,

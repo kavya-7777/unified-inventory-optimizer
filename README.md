@@ -33,7 +33,7 @@ graph TD
 2. Set environment variables: `cp .env.example .env` and `cp frontend/.env.example frontend/.env`
 3. Start Postgres, FastAPI and React: `sudo docker compose up -d --build`
 4. Run migrations: `sudo make migrate`
-5. Generate synthetic data and seed it: `make generate-data && sudo make reset-seed`
+5. Load the demo data and run the pipeline once: `sudo make demo`
 6. Run tests: `sudo make test`
 
 *(Depending on your Docker group permissions, you may need to prefix Docker and Make commands with `sudo`.)*
@@ -44,6 +44,8 @@ Access the apps:
 - API Docs: http://localhost:8000/docs
 
 Trigger a full pipeline run from the terminal with `make run`, or from the Optimization page in the UI.
+
+Project walkthrough: [docs/PROJECT_GUIDE.md](docs/PROJECT_GUIDE.md) · Demo script: [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md)
 
 ## Environment Variables
 See `.env.example`. Never commit `.env` or any secrets.

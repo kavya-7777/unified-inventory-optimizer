@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { StatTile, StatTileGrid } from '@/components/ui/StatTile'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Field'
+import { Input, Select } from '@/components/ui/Field'
 import { EmptyState, ErrorNotice, Spinner } from '@/components/ui/Feedback'
 import { formatNumber } from '@/lib/utils'
 import type { PolicyOut, PolicyUpdate } from '@/lib/types'
@@ -22,15 +23,27 @@ const EDITABLE_FIELDS: { key: EditableField; label: string; step?: string }[] = 
   { key: 'processing_time', label: 'Processing days' },
 ]
 
+const PAGE_SIZE = 50
+
 export function PoliciesPage() {
   const [search, setSearch] = useState('')
+  const [locationId, setLocationId] = useState('')
+  const [skip, setSkip] = useState(0)
   const [edits, setEdits] = useState<Record<string, PolicyUpdate>>({})
   const queryClient = useQueryClient()
 
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['policies', search],
-    queryFn: () => api.listPolicies({ q: search || undefined, limit: 1000 }),
+  const locations = useQuery({ queryKey: ['locations', 0, 1000], queryFn: () => api.listLocations(0, 1000) })
+  const summary = useQuery({ queryKey: ['dashboard-summary'], queryFn: api.getDashboardSummary })
+  // Ask for one extra row to know whether a next page exists.
+  const page = useQuery({
+    queryKey: ['policies', search, locationId, skip],
+    queryFn: () =>
+      api.listPolicies({ q: search || undefined, location_id: locationId || undefined, skip, limit: PAGE_SIZE + 1 }),
+    placeholderData: (prev) => prev,
   })
+  const data = page.data?.slice(0, PAGE_SIZE)
+  const hasNext = (page.data?.length ?? 0) > PAGE_SIZE
+  const { isLoading, isError, error } = page
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -43,13 +56,6 @@ export function PoliciesPage() {
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
     },
   })
-
-  const stats = useMemo(() => {
-    const rows = data ?? []
-    const avgServiceLevel = rows.length ? rows.reduce((s, r) => s + r.service_level, 0) / rows.length : null
-    const avgReviewPeriod = rows.length ? rows.reduce((s, r) => s + r.review_period, 0) / rows.length : null
-    return { total: rows.length, avgServiceLevel, avgReviewPeriod }
-  }, [data])
 
   const unsavedCount = Object.keys(edits).length
 
@@ -91,14 +97,14 @@ export function PoliciesPage() {
       )}
 
       <StatTileGrid>
-        <StatTile label="Policies" value={String(stats.total)} />
+        <StatTile label="Policies" value={summary.data ? String(summary.data.total_policies) : '—'} caption="location × SKU pairs" />
         <StatTile
           label="Avg service level"
-          value={stats.avgServiceLevel != null ? formatNumber(stats.avgServiceLevel * 100, 1) : '—'}
+          value={summary.data?.avg_service_level != null ? formatNumber(summary.data.avg_service_level * 100, 1) : '—'}
           unit="%"
+          caption="across all policies"
         />
-        <StatTile label="Avg review period" value={stats.avgReviewPeriod != null ? formatNumber(stats.avgReviewPeriod, 1) : '—'} unit="days" />
-        <StatTile label="Unsaved edits" value={String(unsavedCount)} tone={unsavedCount > 0 ? 'warn' : 'default'} />
+        <StatTile label="Unsaved edits" value={String(unsavedCount)} tone={unsavedCount > 0 ? 'warn' : 'default'} caption="kept while you page through" />
       </StatTileGrid>
 
       <Card>
@@ -106,12 +112,30 @@ export function PoliciesPage() {
           title="Policy grid"
           description="Inline editable"
           action={
-            <Input
-              className="w-56"
-              placeholder="Filter node or SKU"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+            <div className="flex flex-wrap gap-2">
+              <Select
+                className="w-60"
+                value={locationId}
+                onChange={(e) => {
+                  setLocationId(e.target.value)
+                  setSkip(0)
+                }}
+              >
+                <option value="">All locations</option>
+                {locations.data?.map((l) => (
+                  <option key={l.id} value={l.id}>{l.name}</option>
+                ))}
+              </Select>
+              <Input
+                className="w-56"
+                placeholder="Search location, product or SKU"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                  setSkip(0)
+                }}
+              />
+            </div>
           }
         />
         <CardBody className="p-0">
@@ -162,6 +186,19 @@ export function PoliciesPage() {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+          {data && data.length > 0 && (
+            <div className="flex items-center justify-between border-t border-border px-5 py-3 text-xs text-muted">
+              <span>Showing {skip + 1}–{skip + data.length}</span>
+              <div className="flex gap-1.5">
+                <Button variant="secondary" size="sm" disabled={skip === 0} onClick={() => setSkip(Math.max(0, skip - PAGE_SIZE))}>
+                  <ChevronLeft className="h-3.5 w-3.5" /> Prev
+                </Button>
+                <Button variant="secondary" size="sm" disabled={!hasNext} onClick={() => setSkip(skip + PAGE_SIZE)}>
+                  Next <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
           )}
         </CardBody>

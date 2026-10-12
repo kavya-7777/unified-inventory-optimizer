@@ -2,15 +2,16 @@ import argparse
 import json
 import os
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 if os.path.exists("/app/app"):
     sys.path.insert(0, "/app")
 else:
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend")))
 
+from generate_data import generate_data  # noqa: E402
+
 from app.db.session import SessionLocal  # noqa: E402
-from app.models.base import utcnow  # noqa: E402
 from app.models.inventory import (  # noqa: E402
     Alert,
     DemandForecast,
@@ -48,12 +49,21 @@ RESET_ORDER = [
 ]
 
 
-def seed(reset: bool = False) -> None:
+def load_data(from_file: bool, days: int) -> dict:
+    """
+    By default the dataset is generated fresh (fixed random seed) so demand history always
+    ends yesterday; `from_file` loads the exported JSON exactly as written.
+    """
+    if not from_file:
+        return generate_data(days=days, end=date.today())
     if not os.path.exists(DATA_PATH):
-        sys.exit("No synthetic data found. Run `make generate-data` first.")
-
+        sys.exit("No exported data found. Run `make generate-data` first.")
     with open(DATA_PATH) as f:
-        data = json.load(f)
+        return json.load(f)
+
+
+def seed(reset: bool = False, from_file: bool = False, days: int = 120) -> None:
+    data = load_data(from_file, days)
 
     db = SessionLocal()
     try:
@@ -83,7 +93,7 @@ def seed(reset: bool = False) -> None:
                    if (pol["location_id"], pol["product_id"]) not in known_policies)
 
         if not db.query(InventorySnapshot.id).first():
-            today = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            today = datetime.combine(date.today(), time.min)
             db.add_all(InventorySnapshot(**snap, snapshot_date=today)
                        for snap in data.get("inventory", []))
         db.commit()
@@ -102,4 +112,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--reset", action="store_true",
                         help="delete all existing data (including run history) before seeding")
-    seed(reset=parser.parse_args().reset)
+    parser.add_argument("--from-file", action="store_true",
+                        help="seed from data/synthetic/generated_data.json instead of generating")
+    parser.add_argument("--days", type=int, default=120, help="days of demand history")
+    args = parser.parse_args()
+    seed(reset=args.reset, from_file=args.from_file, days=args.days)

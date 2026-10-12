@@ -1,4 +1,4 @@
-.PHONY: help install dev test lint format migrate seed generate-data run docker-up docker-down reset-seed makemigrations
+.PHONY: help install dev test lint format migrate seed generate-data run docker-up docker-down reset-seed makemigrations demo
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -30,10 +30,19 @@ migrate: ## Run database migrations inside Docker container
 seed: ## Seed database with initial data (keeps existing rows)
 	docker compose exec backend python /scripts/seed_database.py
 
-reset-seed: ## Wipe all data, including run history, and reseed from the synthetic dataset
+reset-seed: ## Wipe all data, including run history, and reseed (history ends yesterday)
 	docker compose exec backend python /scripts/seed_database.py --reset
 
-generate-data: ## Generate synthetic test data locally
+demo: ## Fresh demo: reset data, then run the network pipeline once
+	docker compose exec backend python /scripts/seed_database.py --reset
+	curl -sS -X POST http://localhost:8000/api/v1/network/run \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $${API_KEY}" \
+		-d '{}'
+	@echo "\nNetwork run started; it finishes in a few seconds. Open http://localhost:5173"
+
+
+generate-data: ## Export the synthetic dataset to data/synthetic (seeding generates it itself)
 	python3 scripts/generate_data.py
 
 run: ## Start a database-driven network pipeline run on the local backend

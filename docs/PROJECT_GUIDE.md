@@ -153,11 +153,16 @@ shared across all products, and each product only moves between locations that c
 
 | Node | Demand/day | σ | S_in | S_out | T | Safety stock | Reorder point |
 |---|---|---|---|---|---|---|---|
-| Bengaluru Regional DC | 104.4 | 8.6 | 7 | 0 | 8 | 39.9 | 875 |
-| Adyar Store, Chennai | 14.2 | 3.0 | 1 | 0 | 1 | 6.1 | 20.3 |
+| Bengaluru Regional DC | 106.4 | 8.4 | 7 | 0 | 8 | 39.3 | 891 |
+| Adyar Store, Chennai | 14.7 | 2.4 | 1 | 0 | 1 | 5.0 | 19.7 |
+| Mysuru / Vijayawada suppliers | 152.4 | 7.5 | 0 | 3 | 0 | 0 | 0 |
 
-- **DC safety stock check:** 1.645 × 8.6 × √8 ≈ 40.
-- **DC reorder point check:** 104.4 × 8 + 39.9 ≈ 875.
+The data is regenerated each time you seed so that history ends yesterday, so your numbers
+will differ slightly; the pattern stays the same.
+
+- **DC safety stock check:** 1.645 × 8.4 × √8 ≈ 39 (z = 1.645 for the DC's 95% service level).
+- **Store safety stock check:** 2.054 × 2.4 × √1 ≈ 5 (z = 2.054 for the store's 98% service level).
+- **DC reorder point check:** 106.4 × 8 + 39.3 ≈ 891.
 - **The suppliers hold no stock.** Each promises a 3-day service time, equal to its production
   time, so its T = 0. The Bengaluru DC therefore waits 7 days, because the slower Vijayawada
   supplier takes 3 days to produce plus 4 days in transit.
@@ -227,8 +232,7 @@ cp frontend/.env.example frontend/.env
 
 sudo docker compose up -d --build   # Postgres + backend + frontend
 sudo make migrate                   # apply database migrations
-make generate-data                  # optional: regenerate data/synthetic/generated_data.json
-sudo make reset-seed                # wipe all data and load the synthetic network
+sudo make demo                      # load fresh demo data and run the network pipeline once
 ```
 
 Then open:
@@ -236,8 +240,8 @@ Then open:
 - **UI:** http://localhost:5173
 - **API docs:** http://localhost:8000/docs
 
-Go to **Optimization → Network run** and click **Run network pipeline**. It takes about 5
-seconds, after which every page shows real results.
+`make demo` already runs the network pipeline once. To run it again from the UI, go to
+**Optimization → Network run** and click **Run network pipeline**; it takes about 5–10 seconds.
 
 Useful commands:
 

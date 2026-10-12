@@ -605,9 +605,25 @@ def test_transportation_plan(client, db_session):
 
 
 def test_transportation_plan_no_demand(client, db_session):
-    _seed_network(db_session)
-    plan = client.get("/api/v1/transportation/plan", params={"days": 1}).json()
+    _seed_network(db_session, days=0)
+    plan = client.get("/api/v1/transportation/plan").json()
     assert plan["status"] == "NO_DEMAND_DATA"
+
+
+def test_transportation_history_window_ends_at_last_sale(client, db_session):
+    """Old history still plans: the trailing window counts back from the last recorded day."""
+    from datetime import datetime, timedelta
+
+    from app.models.inventory import DemandHistory
+    _seed_network(db_session, days=0)
+    last = DemandHistory(location_id="ST1", product_id="P1", quantity=12.0,
+                         date=datetime(2024, 1, 31))
+    db_session.add_all([last, DemandHistory(location_id="ST1", product_id="P1", quantity=99.0,
+                                            date=datetime(2024, 1, 31) - timedelta(days=60))])
+    db_session.commit()
+    plan = client.get("/api/v1/transportation/plan", params={"days": 28}).json()
+    assert plan["status"] == "OPTIMAL"
+    assert plan["planned_units"] == 24.0
 
 
 def test_multi_sku_shares_lane_capacity():
