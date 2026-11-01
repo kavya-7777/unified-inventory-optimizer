@@ -24,7 +24,7 @@ def _uuid() -> str:
 class Location(Base):
     __tablename__ = "locations"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(String(255), primary_key=True, default=_uuid)
     name: Mapped[str]
     type: Mapped[str]                                   # Supplier | DC | Store
     region: Mapped[Optional[str]]
@@ -39,7 +39,7 @@ class Location(Base):
 class Product(Base):
     __tablename__ = "products"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(String(255), primary_key=True, default=_uuid)
     name: Mapped[str]
     sku: Mapped[Optional[str]] = mapped_column(unique=True)
     category: Mapped[Optional[str]]
@@ -56,7 +56,7 @@ class Lane(Base):
     """Represents a transportation lane between two locations."""
     __tablename__ = "lanes"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
     source_id: Mapped[str] = mapped_column(ForeignKey("locations.id"))
     target_id: Mapped[str] = mapped_column(ForeignKey("locations.id"))
     transit_time: Mapped[int]                           # Days
@@ -79,7 +79,7 @@ class LocationProductPolicy(Base):
     """Per-SKU-per-Location inventory policy settings."""
     __tablename__ = "location_product_policies"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
     location_id: Mapped[str] = mapped_column(ForeignKey("locations.id"))
     product_id: Mapped[str] = mapped_column(ForeignKey("products.id"))
     service_level: Mapped[Optional[float]] = mapped_column(default=0.95)
@@ -188,7 +188,7 @@ class InventorySnapshot(Base):
 class PipelineRun(Base):
     __tablename__ = "pipeline_runs"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
     run_type: Mapped[str]                               # manual | scheduled | daily_batch
     status: Mapped[str]                                 # running | success | failed
     solver: Mapped[Optional[str]]                       # cp-sat | heuristic
@@ -199,6 +199,7 @@ class PipelineRun(Base):
     parameters: Mapped[Optional[Any]] = mapped_column(JSON)
     error: Mapped[Optional[str]] = mapped_column(Text)
     summary: Mapped[Optional[Any]] = mapped_column(JSON)
+    triggered_by: Mapped[Optional[str]] = mapped_column(String(255))  # user email or "system"
     created_at: Mapped[Optional[datetime]] = mapped_column(default=utcnow)
 
     optimization_results: Mapped[List["OptimizationResult"]] = relationship(

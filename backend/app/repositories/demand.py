@@ -2,13 +2,14 @@
 from datetime import date, datetime, time, timedelta
 from typing import Dict, List, Optional, Set, Tuple
 
-from sqlalchemy import func, select, tuple_
-from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy import func, select
+from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.orm import Session
 
 from app.models.inventory import DemandHistory, Location, Product
 
 BATCH_SIZE = 1000
+UPSERT_BATCH_SIZE = 5000
 
 Key = Tuple[str, str, datetime]
 
@@ -22,32 +23,67 @@ class DemandRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def _insert(self):
+    def _write_upserts(self, rows: List[dict]) -> None:
+        """INSERT … that overwrites the quantity when (location, product, date) exists."""
         dialect = self.db.get_bind().dialect.name
-        if dialect == "postgresql":
-            return postgresql.insert(DemandHistory)
-        if dialect == "sqlite":
-            return sqlite.insert(DemandHistory)
+        if dialect == "mysql":
+            # MySQL 8 renders the upsert as "VALUES (…) AS new ON DUPLICATE KEY UPDATE", which
+            # PyMySQL can't batch in executemany (it falls back to one round trip per row).
+            # Explicit multi-row VALUES statements are about 5x faster.
+            for i in range(0, len(rows), BATCH_SIZE):
+                stmt = mysql.insert(DemandHistory).values(rows[i:i + BATCH_SIZE])
+                self.db.execute(stmt.on_duplicate_key_update(quantity=stmt.inserted.quantity))
+            return
+        if dialect in ("postgresql", "sqlite"):
+            module = postgresql if dialect == "postgresql" else sqlite
+            pg_stmt = module.insert(DemandHistory)
+            pg_stmt = pg_stmt.on_conflict_do_update(
+                index_elements=["location_id", "product_id", "date"],
+                set_={"quantity": pg_stmt.excluded.quantity},
+            )
+            # executemany lets SQLAlchemy batch the rows efficiently ("insertmanyvalues").
+            for i in range(0, len(rows), UPSERT_BATCH_SIZE):
+                self.db.execute(pg_stmt, rows[i:i + UPSERT_BATCH_SIZE])
+            return
         raise NotImplementedError(f"Upsert not supported for dialect '{dialect}'")
 
-    def _existing_keys(self, keys: List[Key]) -> set:
-        found: Set[Key] = set()
+    def existing_keys(self, keys: List[Key]) -> set:
+        """
+        Which keys already exist. Scans the bounding box (locations x products x date range)
+        through the unique index rather than a row-value IN list, which databases plan
+        poorly for thousands of keys; the box is then filtered down to the exact keys.
+        """
+        if not keys:
+            return set()
+        wanted = set(keys)
         cols = (DemandHistory.location_id, DemandHistory.product_id, DemandHistory.date)
-        for i in range(0, len(keys), BATCH_SIZE):
-            chunk = keys[i:i + BATCH_SIZE]
-            rows = self.db.execute(select(*cols).where(tuple_(*cols).in_(chunk))).all()
-            found.update((r[0], r[1], r[2]) for r in rows)
+        locs = sorted({k[0] for k in wanted})
+        prods = sorted({k[1] for k in wanted})
+        start = min(k[2] for k in wanted)
+        end = max(k[2] for k in wanted)
+        found: Set[Key] = set()
+        for i in range(0, len(locs), 200):
+            stmt = select(*cols).where(
+                DemandHistory.location_id.in_(locs[i:i + 200]),
+                DemandHistory.product_id.in_(prods),
+                DemandHistory.date.between(start, end),
+            )
+            for row in self.db.execute(stmt):
+                key = (row[0], row[1], row[2])
+                if key in wanted:
+                    found.add(key)
         return found
 
     def _unknown_ids(self, model, ids: set) -> set:
         known = set(self.db.scalars(select(model.id).where(model.id.in_(ids))))
         return ids - known
 
-    def upsert_bulk(self, records: List[dict]) -> dict:
+    def upsert_bulk(self, records: List[dict], commit: bool = True) -> dict:
         """
         Insert or update demand rows keyed on (location_id, product_id, date).
         Rows referencing unknown locations/products are ignored and reported.
         Duplicate keys within the payload resolve to the last occurrence.
+        With commit=False the rows join the caller's transaction (no commit, no rollback).
         """
         if not records:
             return {"inserted_count": 0, "updated_count": 0, "ignored_count": 0, "errors": []}
@@ -69,20 +105,16 @@ class DemandRepository:
                     "errors": errors}
 
         keys = list(valid)
-        existing = self._existing_keys(keys)
+        existing = self.existing_keys(keys)
         rows = list(valid.values())
 
         try:
-            for i in range(0, len(rows), BATCH_SIZE):
-                stmt = self._insert().values(rows[i:i + BATCH_SIZE])
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=["location_id", "product_id", "date"],
-                    set_={"quantity": stmt.excluded.quantity},
-                )
-                self.db.execute(stmt)
-            self.db.commit()
+            self._write_upserts(rows)
+            if commit:
+                self.db.commit()
         except Exception:
-            self.db.rollback()
+            if commit:
+                self.db.rollback()
             raise
 
         updated = sum(1 for k in keys if k in existing)

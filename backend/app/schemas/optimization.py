@@ -120,6 +120,7 @@ class PipelineRunOut(BaseModel):
     error: Optional[str]
     parameters: Optional[Dict[str, Any]] = None
     summary: Optional[Dict[str, Any]] = None
+    triggered_by: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

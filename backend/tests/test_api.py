@@ -125,13 +125,16 @@ def test_get_run_not_found(client):
     assert client.get("/api/v1/runs/missing/results").status_code == 404
 
 
-def test_api_key_guard(client, monkeypatch):
+def test_machine_api_key_acts_as_scheduled_job(anon_client, db_session, monkeypatch):
     from app.core.config import settings
     monkeypatch.setattr(settings, "API_KEY", "s3cret")
-    assert client.post("/api/v1/optimization/run", json={}).status_code == 401
+    assert anon_client.post("/api/v1/optimization/run", json={}).status_code == 401
     headers = {"Authorization": "Bearer s3cret"}
-    assert client.post("/api/v1/optimization/run", json={}, headers=headers).status_code == 200
-    assert client.get("/api/v1/runs").status_code == 200
+    response = anon_client.post("/api/v1/optimization/run", json={}, headers=headers)
+    assert response.status_code == 200
+    run = db_session.get(PipelineRun, response.json()["pipeline_run_id"])
+    assert run.triggered_by == "system"
+    assert anon_client.get("/api/v1/runs", headers=headers).status_code == 200
 
 
 # ─────────────────────────────────────────────
@@ -777,3 +780,37 @@ def test_policy_processing_time_update(client, db_session):
     _seed_network(db_session)
     updated = client.patch("/api/v1/policies/POLD", json={"processing_time": 4}).json()
     assert updated["processing_time"] == 4
+
+
+def test_network_runs_keep_forecasts_for_recent_runs_only(client, db_session, monkeypatch):
+    """Stored forecasts are pruned to the newest few runs so a small database doesn't fill up."""
+    from datetime import date, timedelta
+
+    from app.repositories import pipeline as pipeline_repo
+    from app.repositories.demand import DemandRepository
+    monkeypatch.setattr(pipeline_repo.ForecastRepository.prune_older_runs, "__defaults__", (2,))
+
+    from app.models.inventory import LocationProductPolicy
+    db_session.add_all([
+        LocationProductPolicy(location_id=loc, product_id="P1") for loc in ("SUP1", "DC1", "ST1")
+    ])
+    db_session.commit()
+    start = date.today() - timedelta(days=60)
+    DemandRepository(db_session).upsert_bulk([
+        {"location_id": "ST1", "product_id": "P1", "date": start + timedelta(days=d),
+         "quantity": 10 + d % 7} for d in range(60)
+    ])
+
+    run_ids = []
+    for _ in range(4):
+        res = client.post("/api/v1/network/run", json={})
+        assert res.status_code == 202
+        run_ids.append(res.json()["pipeline_run_id"])
+        assert client.get(f"/api/v1/runs/{run_ids[-1]}").json()["status"] == "success"
+
+    db_session.expire_all()
+    kept = {r for (r,) in db_session.query(DemandForecast.pipeline_run_id).distinct()}
+    assert kept == set(run_ids[-2:])
+    # Older runs themselves (status, summary) are kept; only their stored forecasts go.
+    first = client.get(f"/api/v1/runs/{run_ids[0]}").json()
+    assert first["status"] == "success" and first["summary"]["series_forecast"] == 1

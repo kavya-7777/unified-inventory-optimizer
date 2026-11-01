@@ -6,7 +6,7 @@ import copy
 import logging
 import time
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
 
@@ -25,7 +25,9 @@ from app.transportation.optimizer import optimize_transportation
 log = logging.getLogger(__name__)
 
 
-def run_daily_pipeline(db: Session, params: Dict[str, Any]) -> Dict[str, Any]:
+def run_daily_pipeline(
+    db: Session, params: Dict[str, Any], triggered_by: Optional[str] = None
+) -> Dict[str, Any]:
     validate_references(db, params.get("nodes") or [])
     run_id = str(uuid.uuid4())
     start = time.perf_counter()
@@ -36,6 +38,7 @@ def run_daily_pipeline(db: Session, params: Dict[str, Any]) -> Dict[str, Any]:
         run_id=run_id,
         run_type=params.get("run_type", "daily_batch"),
         parameters=params,
+        triggered_by=triggered_by,
     )
 
     nodes = copy.deepcopy(params.get("nodes") or default_demo_nodes())

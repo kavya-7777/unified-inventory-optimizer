@@ -53,7 +53,7 @@ function ResultsTable({ runId }: { runId: string }) {
           </Select>
         }
       />
-      <CardBody className="p-0">
+      <CardBody className="overflow-x-auto p-0">
         {isLoading && <Spinner />}
         {isError && <div className="p-5"><ErrorNotice message={(error as Error).message} /></div>}
         {data && data.total === 0 && (

@@ -1,0 +1,44 @@
+# Render Blueprint: the FastAPI backend. The MySQL database is hosted on Aiven (free plan) and
+# the frontend on Vercel — see docs/DEPLOYMENT.md.
+# Render → New → Blueprint → pick this repo. Then fill in the variables marked sync: false.
+services:
+  - type: web
+    name: uio-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: OPTIMIZATION_TIMEOUT_SECONDS
+        value: "60"
+      # Aiven → your MySQL service → Overview → Service URI
+      # (mysql://avnadmin:…@….aivencloud.com:12345/defaultdb?ssl-mode=REQUIRED)
+      - key: DATABASE_URL
+        sync: false
+      # Optional: Aiven's CA certificate (Overview → CA certificate → Show), pasted as is,
+      # so the backend also verifies it is talking to your database.
+      - key: DATABASE_SSL_CA
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: API_KEY
+        generateValue: true
+      # Your Vercel URL, e.g. https://unified-inventory-optimizer.vercel.app (comma-separate several)
+      - key: CORS_ORIGINS
+        sync: false
+      # First admin login; only used while no users exist.
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_NAME
+        value: Administrator

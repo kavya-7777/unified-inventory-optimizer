@@ -182,7 +182,7 @@ React UI (Vite, TanStack Query) ──HTTP/JSON──▶ FastAPI routers (app/ap
                                                    │
                      services        business logic: network, inventory, dashboard, transportation
                      forecasting/ · optimization/ · transportation/   pure algorithms, no database
-                     repositories    all SQL ──SQLAlchemy──▶ PostgreSQL (Alembic migrations)
+                     repositories    all SQL ──SQLAlchemy──▶ MySQL 8 (Alembic migrations)
 ```
 
 | Folder | Role |
@@ -194,17 +194,26 @@ React UI (Vite, TanStack Query) ──HTTP/JSON──▶ FastAPI routers (app/ap
 | `backend/app/transportation` | Single- and multi-SKU min-cost flow LPs |
 | `backend/app/repositories` | Database queries |
 | `backend/app/models` | Table definitions |
-| `database/migrations` | Schema history |
+| `backend/app/demo` | Synthetic demo network generator and loader |
+| `backend/migrations` | Schema history (applied automatically on start) |
 | `frontend/src/pages` | One file per UI page |
-| `scripts` | Synthetic data generation and seeding |
+| `scripts` | Command-line wrappers: seed demo data, run the pipeline |
 
 - **Network runs happen in the background.** The API answers immediately with a run ID, and the
   UI checks `GET /api/v1/runs/{id}` every 1.5 seconds until the run finishes. A second run
   started while one is in progress is rejected with HTTP 409.
 - **Tests:** automated tests run in CI on an in-memory database, including tests that check each
   algorithm against a known answer.
-- **Optional auth:** set `API_KEY` on the backend and `VITE_API_KEY` on the frontend to require
-  a bearer token on POST and PATCH requests.
+- **Sign-in and roles:** users log in with email and password (bcrypt-hashed) and receive a
+  signed JWT that the UI sends as a bearer token. Every data endpoint requires a valid token;
+  endpoints that change data also check the role (Viewer < Planner < Admin). Repeated failed
+  logins are rate-limited. An optional `API_KEY` lets the nightly job start runs.
+- **Activity log:** pipeline runs, policy edits, alert resolutions, imports and user changes are
+  recorded with who did them and when.
+- **Excel import:** a six-sheet template (Locations, Products, Lanes, Policies, Inventory,
+  Demand). Rows are matched by location code and SKU. Every row is validated, including types,
+  ranges, duplicates and references, before anything is written, and the whole file is applied
+  in one transaction.
 
 ---
 
@@ -221,6 +230,10 @@ React UI (Vite, TanStack Query) ──HTTP/JSON──▶ FastAPI routers (app/ap
 | Pipeline Runs / Run detail | Run summary plus every node's service times, safety stock, reorder point and EOQ |
 | Policies | Edit service levels, costs and processing times; changes feed the next run |
 | Alerts | Review and resolve issues raised by runs |
+| Data Import | Download the template, upload Excel/CSV, preview problems, import, see import history (Planner+) |
+| Users | Add users, change roles, deactivate, reset passwords (Admin) |
+| Activity log | Who changed what, and when (Admin) |
+| Account | Your profile and change password |
 
 ---
 
@@ -232,15 +245,16 @@ From the repository root:
 cp .env.example .env
 cp frontend/.env.example frontend/.env
 
-sudo docker compose up -d --build   # Postgres + backend + frontend
-sudo make migrate                   # apply database migrations
+sudo docker compose up -d --build   # MySQL + backend + frontend (migrations run on start)
 sudo make demo                      # load fresh demo data and run the network pipeline once
 ```
 
 Then open:
 
-- **UI:** http://localhost:5173
+- **UI:** http://localhost:5173 (sign in as `admin@example.com` / `admin12345` locally)
 - **API docs:** http://localhost:8000/docs
+
+To deploy online (Render + Vercel), follow [DEPLOYMENT.md](DEPLOYMENT.md).
 
 `make demo` already runs the network pipeline once. To run it again from the UI, go to
 **Optimization → Network run** and click **Run network pipeline**; it takes about 5–10 seconds.
@@ -278,8 +292,26 @@ program.
 Safety stock protects against the part of demand you failed to predict. A well-forecast seasonal
 pattern needs less buffer than its raw variability suggests.
 
+**Why MySQL?**
+It's the most widely used open-source relational database, and it has a free managed host
+(Aiven) with automatic backups. The app relies on three things it does well: transactions,
+so an Excel import is all-or-nothing; unique keys with `INSERT … ON DUPLICATE KEY UPDATE`, so
+re-importing sales history updates rows instead of duplicating them; and JSON columns for run
+summaries and the activity log. Connections to the hosted database are encrypted (TLS).
+
+**How is the app secured?**
+Passwords are stored only as bcrypt hashes. Sign-in returns a signed, expiring JWT. The backend
+checks the token and the role on every request; the UI hiding buttons is only a convenience.
+Failed logins are rate-limited, and every change is recorded in the activity log.
+
+**What if someone uploads a bad spreadsheet?**
+Nothing is saved. The upload is checked first, and every problem is listed with its sheet,
+row and column. A valid file is written in a single transaction, so a partial import can't
+happen.
+
 **What are the main simplifications?**
 
 - Lead times are fixed (the `lead_time_observations` table is reserved for measured lead times).
 - Demands at different stores are assumed independent.
+- All users share one workspace (single organisation); separate data per organisation is future work.
 - A DC with two suppliers splits its demand equally between them.

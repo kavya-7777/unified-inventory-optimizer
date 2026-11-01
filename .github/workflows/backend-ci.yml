@@ -9,6 +9,19 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: uio_test
+          MYSQL_USER: uio
+          MYSQL_PASSWORD: uio_password
+          MYSQL_ROOT_PASSWORD: root_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_password"
+          --health-interval=5s --health-timeout=5s --health-retries=20
     defaults:
       run:
         working-directory: backend
@@ -36,6 +49,12 @@ jobs:
       run: |
         mypy app/
 
-    - name: Test with pytest
+    - name: Test with pytest (in-memory SQLite)
+      run: |
+        pytest
+
+    - name: Test with pytest (MySQL 8)
+      env:
+        TEST_DATABASE_URL: mysql+pymysql://uio:uio_password@127.0.0.1:3306/uio_test
       run: |
         pytest

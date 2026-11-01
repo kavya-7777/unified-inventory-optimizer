@@ -5,7 +5,7 @@ from typing import Callable, List, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.security import require_api_key
+from app.core.security import CurrentUser, require_role
 from app.db.deps import get_db, get_session_factory
 from app.forecasting.runner import run_forecast_pipeline
 from app.optimization.errors import NetworkValidationError
@@ -30,8 +30,10 @@ from app.schemas.optimization import (
 from app.services.network import execute_network_run
 from app.services.optimization import trigger_optimization
 from app.services.pipeline import run_daily_pipeline
+from app.services.users import record_event
 
 router = APIRouter(prefix="/api/v1", tags=["optimization"])
+planner = require_role("planner")
 
 
 def _invalid_network(e: NetworkValidationError) -> HTTPException:
@@ -41,34 +43,42 @@ def _invalid_network(e: NetworkValidationError) -> HTTPException:
     )
 
 
-@router.post(
-    "/optimization/run",
-    response_model=OptimizationRunResponse,
-    dependencies=[Depends(require_api_key)],
-)
-def run_optimization(payload: OptimizationRunRequest, db: Session = Depends(get_db)):
+@router.post("/optimization/run", response_model=OptimizationRunResponse)
+def run_optimization(
+    payload: OptimizationRunRequest,
+    db: Session = Depends(get_db),
+    current: CurrentUser = Depends(planner),
+):
     try:
-        return trigger_optimization(db, payload.model_dump())
+        result = trigger_optimization(db, payload.model_dump(), triggered_by=current.email)
+        record_event(db, current, "pipeline.run", "pipeline_run", result["pipeline_run_id"],
+                     {"run_type": "optimization"})
+        return result
     except NetworkValidationError as e:
         raise _invalid_network(e) from e
 
 
-@router.post("/forecast/run", response_model=ForecastRunResponse)
+@router.post(
+    "/forecast/run", response_model=ForecastRunResponse, dependencies=[Depends(planner)]
+)
 def run_forecast(payload: ForecastRunRequest):
     items = [item.model_dump() for item in payload.items]
     results = run_forecast_pipeline(items, horizon=payload.horizon)
     return {"forecasts": results, "count": len(results)}
 
 
-@router.post(
-    "/pipeline/run",
-    response_model=PipelineRunResponse,
-    dependencies=[Depends(require_api_key)],
-)
-def run_master_pipeline(payload: PipelineRunRequest, db: Session = Depends(get_db)):
+@router.post("/pipeline/run", response_model=PipelineRunResponse)
+def run_master_pipeline(
+    payload: PipelineRunRequest,
+    db: Session = Depends(get_db),
+    current: CurrentUser = Depends(planner),
+):
     """Run the entire E2E pipeline: Validation -> Forecast -> GSM -> Transportation"""
     try:
-        return run_daily_pipeline(db, payload.model_dump())
+        result = run_daily_pipeline(db, payload.model_dump(), triggered_by=current.email)
+        record_event(db, current, "pipeline.run", "pipeline_run", result["pipeline_run_id"],
+                     {"run_type": payload.run_type})
+        return result
     except NetworkValidationError as e:
         raise _invalid_network(e) from e
 
@@ -77,13 +87,13 @@ def run_master_pipeline(payload: PipelineRunRequest, db: Session = Depends(get_d
     "/network/run",
     response_model=NetworkRunAccepted,
     status_code=202,
-    dependencies=[Depends(require_api_key)],
 )
 def run_network(
     payload: NetworkRunRequest,
     background: BackgroundTasks,
     db: Session = Depends(get_db),
     session_factory: Callable[[], Session] = Depends(get_session_factory),
+    current: CurrentUser = Depends(planner),
 ):
     """
     Starts the database-driven pipeline (forecast → GSM per SKU → alerts → transportation)
@@ -98,7 +108,10 @@ def run_network(
                     "pipeline_run_id": active.id},
         )
     params = payload.model_dump()
-    run = repo.create(run_id=str(uuid.uuid4()), run_type=payload.run_type, parameters=params)
+    run = repo.create(run_id=str(uuid.uuid4()), run_type=payload.run_type, parameters=params,
+                      triggered_by=current.email)
+    record_event(db, current, "pipeline.run", "pipeline_run", run.id,
+                 {"run_type": payload.run_type})
     background.add_task(execute_network_run, session_factory, run.id, params)
     return {"pipeline_run_id": run.id, "status": run.status}
 
@@ -160,13 +173,14 @@ def get_alerts(
     )
 
 
-@router.post(
-    "/alerts/{alert_id}/resolve",
-    response_model=AlertOut,
-    dependencies=[Depends(require_api_key)],
-)
-def resolve_alert(alert_id: int, db: Session = Depends(get_db)):
+@router.post("/alerts/{alert_id}/resolve", response_model=AlertOut)
+def resolve_alert(
+    alert_id: int, db: Session = Depends(get_db), current: CurrentUser = Depends(planner)
+):
     alert = AlertRepository(db).resolve(alert_id)
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
+    record_event(db, current, "alert.resolve", "alert", str(alert_id),
+                 {"alert_type": alert.alert_type, "message": alert.message})
+    db.refresh(alert)
     return alert

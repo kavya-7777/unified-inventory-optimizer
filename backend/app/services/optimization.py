@@ -1,7 +1,7 @@
 """Service layer: bridges repositories and the optimization engine."""
 import logging
 import uuid
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -51,13 +51,16 @@ def stage_optimization_outputs(db: Session, run_id: str, result: Dict[str, Any])
         )
 
 
-def trigger_optimization(db: Session, params: Dict[str, Any]) -> Dict[str, Any]:
+def trigger_optimization(
+    db: Session, params: Dict[str, Any], triggered_by: Optional[str] = None
+) -> Dict[str, Any]:
     """Runs the optimizer inside a persisted pipeline run (running → success | failed)."""
     validate_references(db, params.get("nodes") or [])
     run_repo = PipelineRunRepository(db)
     run_id = str(uuid.uuid4())
     params = {**params, "pipeline_run_id": run_id}
-    run_repo.create(run_id=run_id, run_type=params.get("run_type", "manual"), parameters=params)
+    run_repo.create(run_id=run_id, run_type=params.get("run_type", "manual"), parameters=params,
+                    triggered_by=triggered_by)
 
     try:
         result = run_optimization_pipeline(params)

@@ -215,7 +215,11 @@ def run_network_pipeline(db: Session, run_id: str, params: Dict[str, Any]) -> Di
                 "method": result["method"],
                 "pattern": result["pattern"],
             })
-    ForecastRepository(db).bulk_save_rows(forecast_rows)
+    forecast_repo = ForecastRepository(db)
+    forecast_repo.bulk_save_rows(forecast_rows)
+    # Only the newest run's forecasts are read (by the transport plan); keep a few for reference
+    # and drop the rest, so nightly runs don't fill a small hosted database (~7 MB per run).
+    forecast_repo.prune_older_runs(keep_run_id=run_id)
 
     # 2-3. Per-SKU guaranteed-service optimization.
     results: Dict[Pair, Dict[str, Any]] = {}

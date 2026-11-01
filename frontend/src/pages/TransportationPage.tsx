@@ -81,7 +81,7 @@ export function TransportationPage() {
 
           <Card>
             <CardHeader title="Lane flows" description="Source → target movements per SKU, units per day" />
-            <CardBody className="p-0">
+            <CardBody className="overflow-x-auto p-0">
               {plan.data.lane_flows.length === 0 && (
                 <EmptyState title="No flows" description="The plan produced no positive flows for this selection." />
               )}

@@ -4,11 +4,12 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.security import require_api_key
+from app.core.security import CurrentUser, require_role
 from app.db.deps import get_db
 from app.models.inventory import Location, LocationProductPolicy, Product
 from app.repositories.inventory import PolicyRepository
 from app.schemas.inventory import PolicyOut, PolicyUpdate
+from app.services.users import record_event
 
 router = APIRouter(prefix="/api/v1", tags=["policies"])
 
@@ -49,12 +50,13 @@ def get_policies(
     return [_to_policy_out(*row) for row in rows]
 
 
-@router.patch(
-    "/policies/{policy_id}",
-    response_model=PolicyOut,
-    dependencies=[Depends(require_api_key)],
-)
-def update_policy(policy_id: str, payload: PolicyUpdate, db: Session = Depends(get_db)):
+@router.patch("/policies/{policy_id}", response_model=PolicyOut)
+def update_policy(
+    policy_id: str,
+    payload: PolicyUpdate,
+    db: Session = Depends(get_db),
+    current: CurrentUser = Depends(require_role("planner")),
+):
     repo = PolicyRepository(db)
     fields = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
     try:
@@ -64,4 +66,7 @@ def update_policy(policy_id: str, payload: PolicyUpdate, db: Session = Depends(g
     row = repo.get_by_id_joined(policy_id) if updated else None
     if not row:
         raise HTTPException(status_code=404, detail="Policy not found")
+    _, location, product = row
+    record_event(db, current, "policy.update", "policy", policy_id,
+                 {"location": location.id, "sku": product.sku, **fields})
     return _to_policy_out(*row)

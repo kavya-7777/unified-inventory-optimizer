@@ -17,7 +17,7 @@ export function RunsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Pipeline runs</h1>
           <p className="mt-1 text-sm text-muted">History of optimization and pipeline executions.</p>
@@ -33,10 +33,10 @@ export function RunsPage() {
 
       <Card>
         <CardHeader title="Runs" />
-        <CardBody className="p-0">
+        <CardBody className="overflow-x-auto p-0">
           {isLoading && <Spinner />}
           {isError && <div className="p-5"><ErrorNotice message={(error as Error).message} /></div>}
-          {data && data.length === 0 && <EmptyState title="No runs yet" description="Trigger one from the Optimization page." />}
+          {data && data.length === 0 && <EmptyState title="No runs yet" description="Planners can start one from the Optimization page." />}
           {data && data.length > 0 && (
             <table className="w-full text-sm">
               <thead>
@@ -46,6 +46,7 @@ export function RunsPage() {
                   <th className="px-5 py-2.5 font-medium">Solver</th>
                   <th className="px-5 py-2.5 font-medium">Fallback</th>
                   <th className="px-5 py-2.5 font-medium">Started</th>
+                  <th className="px-5 py-2.5 font-medium">Started by</th>
                   <th className="px-5 py-2.5 font-medium">Duration</th>
                 </tr>
               </thead>
@@ -60,7 +61,8 @@ export function RunsPage() {
                     <td className="px-5 py-2.5"><StatusBadge status={run.status} /></td>
                     <td className="px-5 py-2.5 text-muted">{run.solver ?? '—'}</td>
                     <td className="px-5 py-2.5 text-muted">{run.fallback_used ? 'yes' : 'no'}</td>
-                    <td className="px-5 py-2.5 text-muted">{formatDateTime(run.started_at)}</td>
+                    <td className="whitespace-nowrap px-5 py-2.5 text-muted">{formatDateTime(run.started_at)}</td>
+                    <td className="px-5 py-2.5 text-muted">{run.triggered_by === 'system' ? 'Scheduled job' : run.triggered_by ?? '—'}</td>
                     <td className="px-5 py-2.5 text-muted">{formatDuration(run.duration_seconds)}</td>
                   </tr>
                 ))}

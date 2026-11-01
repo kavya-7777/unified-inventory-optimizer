@@ -171,7 +171,7 @@ function DemandAnalytics() {
       {f && f.leaderboard.length > 0 && (
         <Card>
           <CardHeader title="Model comparison" description="Every candidate is fitted on the training window and scored on the holdout window; lowest MASE wins" />
-          <CardBody className="p-0">
+          <CardBody className="overflow-x-auto p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>

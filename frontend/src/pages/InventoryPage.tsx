@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { api } from '@/lib/api'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
+import { api, ApiError } from '@/lib/api'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { ErrorNotice, EmptyState, Spinner } from '@/components/ui/Feedback'
 import { Button } from '@/components/ui/Button'
@@ -14,6 +14,22 @@ import { formatCurrency, formatDate, formatNumber, humanize } from '@/lib/utils'
 import type { LocationOut, PositionStatus, ProductOut } from '@/lib/types'
 
 const PAGE_SIZE = 25
+
+function ExportButton() {
+  const exportResults = useMutation({ mutationFn: api.downloadResults })
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Button variant="secondary" size="sm" onClick={() => exportResults.mutate()} loading={exportResults.isPending}>
+        {!exportResults.isPending && <Download className="h-3.5 w-3.5" />} Export to Excel
+      </Button>
+      {exportResults.isError && (
+        <p className="text-xs text-danger-700">
+          {exportResults.error instanceof ApiError ? exportResults.error.message : 'Export failed'}
+        </p>
+      )}
+    </div>
+  )
+}
 
 const STATUS_HELP: Record<PositionStatus, string> = {
   STOCKOUT_RISK: 'On hand below safety stock',
@@ -255,6 +271,7 @@ export function InventoryPage() {
         eyebrow="Stock"
         title="Inventory"
         description="Where stock stands today versus the safety stock and reorder points from the latest optimization run."
+        actions={<ExportButton />}
       />
       <Tabs
         defaultKey="positions"

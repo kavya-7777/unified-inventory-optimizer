@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/Field'
 import { EmptyState, ErrorNotice, Spinner } from '@/components/ui/Feedback'
 import { formatDateTime, humanize } from '@/lib/utils'
 import type { BadgeTone } from '@/lib/utils'
+import { useAuth } from '@/lib/auth-context'
 
 const SEVERITY_TONE: Record<string, BadgeTone> = {
   CRITICAL: 'danger',
@@ -20,12 +21,17 @@ const SEVERITY_TONE: Record<string, BadgeTone> = {
 type Filter = 'unresolved' | 'resolved' | 'all'
 
 function ResolveButton({ alertId }: { alertId: number }) {
+  const { can } = useAuth()
   const queryClient = useQueryClient()
   const mutation = useMutation({
     mutationFn: () => api.resolveAlert(alertId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['alerts'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+    },
   })
 
+  if (!can('planner')) return null
   return (
     <Button variant="secondary" size="sm" loading={mutation.isPending} onClick={() => mutation.mutate()}>
       <CheckCircle2 className="h-3.5 w-3.5" /> Resolve
@@ -73,7 +79,7 @@ export function AlertsPage() {
 
       <Card>
         <CardHeader title="Alerts" />
-        <CardBody className="p-0">
+        <CardBody className="overflow-x-auto p-0">
           {isLoading && <Spinner />}
           {isError && (
             <div className="p-5">

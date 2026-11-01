@@ -12,5 +12,6 @@ from app.models.inventory import (  # noqa: F401
     PipelineRun,
     Product,
 )
+from app.models.users import AuditEvent, DataImport, User  # noqa: F401
 
 __all__ = ["Base"]

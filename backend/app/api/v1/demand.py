@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.security import require_api_key
+from app.core.security import CurrentUser, require_role
 from app.db.deps import get_db
 from app.forecasting.engine import forecast_series
 from app.models.inventory import Location, Product
@@ -16,22 +16,26 @@ from app.schemas.demand import (
     DemandIngestRequest,
     DemandIngestResponse,
 )
+from app.services.users import record_event
 
 router = APIRouter(prefix="/api/v1/demand", tags=["demand"])
 
 
-@router.post(
-    "/ingest",
-    response_model=DemandIngestResponse,
-    dependencies=[Depends(require_api_key)],
-)
-def ingest_demand(payload: DemandIngestRequest, db: Session = Depends(get_db)):
+@router.post("/ingest", response_model=DemandIngestResponse)
+def ingest_demand(
+    payload: DemandIngestRequest,
+    db: Session = Depends(get_db),
+    current: CurrentUser = Depends(require_role("planner")),
+):
     """
     Ingest a batch of historical demand records.
     Existing (location, product, date) rows have their quantity overwritten.
     """
     records = [record.model_dump() for record in payload.records]
-    return DemandRepository(db).upsert_bulk(records)
+    result = DemandRepository(db).upsert_bulk(records)
+    record_event(db, current, "demand.ingest", "demand_history", None,
+                 {k: result[k] for k in ("inserted_count", "updated_count", "ignored_count")})
+    return result
 
 
 @router.get("/history", response_model=List[DemandHistoryOut])

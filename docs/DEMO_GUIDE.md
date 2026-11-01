@@ -14,10 +14,12 @@ Commands below assume your user is in the `docker` group. If not, prefix them wi
 
 ```bash
 git pull
-docker compose up -d --build
-make migrate
+docker compose up -d --build     # also applies database migrations
 make demo
 ```
+
+For the online version, follow "Before a presentation" in [DEPLOYMENT.md](DEPLOYMENT.md#6-before-a-presentation)
+instead: wake the server, and reset to fresh demo data from **Data Import** as admin.
 
 Then click through every page once (section 2) so nothing surprises you on the day.
 Record a short screen capture of the full walkthrough as a backup.
@@ -25,17 +27,18 @@ Record a short screen capture of the full walkthrough as a backup.
 ### 30 minutes before
 
 ```bash
-docker compose ps        # all three containers "Up", postgres "healthy"
+docker compose ps        # all three containers "Up", mysql "healthy"
 make demo                # fresh data (history ends yesterday) + one network run
 ```
 
-- Open http://localhost:5173 and check the top-right pill says **Backend online**.
+- Open http://localhost:5173, sign in as admin, and check the top-right pill says **Online**.
+- Have a Planner and a Viewer account ready (create them on **Users**) to show role-based access.
 - Zoom the browser to 110–125% so the room can read the tables.
 - Keep a terminal open with `docker compose logs -f backend` in case you need it.
 - Keep [PROJECT_GUIDE.md](PROJECT_GUIDE.md) open for questions.
 
-`make demo` wipes all data, including run history, and loads a clean dataset. Run it
-before every demo, and again afterwards to undo any live changes.
+`make demo` wipes all planning data, including run history, and loads a clean dataset. Users
+are kept. Run it before every demo, and again afterwards to undo any live changes.
 
 ---
 
@@ -180,6 +183,15 @@ Tiruppur Garment Unit ships it.
 
 ### Optional extras (if time allows)
 
+- **Roles:** sign out and sign in as the Viewer. The Optimization and Data Import pages are
+  gone from the menu, policies are read-only, and opening `/optimization` directly shows
+  "You don't have access". Then, as admin, open **Activity log** to show who did what during
+  the demo.
+- **Excel import:** on **Data Import**, download the blank template, upload a file with a
+  deliberate mistake (e.g. a store type of "Warehouse") to show the row-level error list, then
+  a correct one to show the preview and import.
+- **Excel export:** **Export** on the Dashboard downloads targets, stock positions, the
+  transport plan and open alerts as one workbook.
 - **API docs** at http://localhost:8000/docs: every endpoint is documented and callable.
 - **Tests:** `make test` runs the automated test suite, including known-answer checks for every
   algorithm.
@@ -190,7 +202,8 @@ Tiruppur Garment Unit ships it.
 
 | Symptom | Fix |
 |---|---|
-| Pill says **Backend unreachable** | `docker compose ps`, then `docker compose restart backend` |
+| Pill says **Server unreachable** | `docker compose ps`, then `docker compose restart backend` |
+| Login fails or you're sent back to sign-in | Session expired (8 hours) or wrong password; sign in again. Locally the default admin is admin@example.com / admin12345 |
 | Pages are empty or show "No plan" | No network run yet: run `make demo` |
 | Network run shows **failed** | Read the error on the run page; `docker compose logs backend --tail 50`; then `make demo` |
 | "Run … is still running" | A run is in progress; the page follows it automatically. Wait a few seconds |

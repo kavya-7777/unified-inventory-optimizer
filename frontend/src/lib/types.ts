@@ -190,6 +190,7 @@ export interface PipelineRunOut {
   error: string | null
   parameters: Record<string, unknown> | null
   summary: RunSummary | null
+  triggered_by?: string | null
 }
 
 export interface RunSummary {
@@ -459,4 +460,94 @@ export interface ApiGenericError {
 
 export interface ApiCodedError {
   detail: { code: string; message: string }
+}
+
+// ── Auth, users & activity ───────────────────────────────────────────────────
+
+export type Role = 'admin' | 'planner' | 'viewer'
+
+export interface UserOut {
+  id: string
+  email: string
+  name: string
+  role: Role
+  is_active: boolean
+  last_login_at?: string | null
+  created_at?: string | null
+}
+
+export interface LoginResponse {
+  access_token: string
+  token_type: string
+  expires_in: number
+  user: UserOut
+}
+
+export interface UserCreate {
+  email: string
+  name: string
+  role: Role
+  password: string
+}
+
+export interface UserUpdate {
+  name?: string
+  role?: Role
+  is_active?: boolean
+}
+
+export interface AuditEventOut {
+  id: number
+  user_email: string
+  action: string
+  entity_type: string | null
+  entity_id: string | null
+  details: Record<string, unknown> | null
+  created_at: string
+}
+
+// ── Setup, import & export ───────────────────────────────────────────────────
+
+export interface SetupStatus {
+  locations: number
+  products: number
+  lanes: number
+  policies: number
+  inventory_rows: number
+  demand_rows: number
+  runs: number
+  has_data: boolean
+}
+
+export interface ImportSheetCount {
+  sheet: string
+  rows: number
+  created: number
+  updated: number
+}
+
+export interface ImportIssue {
+  sheet: string
+  row: number | null
+  column: string | null
+  message: string
+}
+
+export interface ImportResult {
+  filename: string
+  dry_run: boolean
+  committed: boolean
+  import_id: string | null
+  sheets: ImportSheetCount[]
+  errors: ImportIssue[]
+  error_count: number
+  warnings: string[]
+}
+
+export interface ImportRecord {
+  id: string
+  filename: string
+  user_email: string
+  summary: Record<string, { rows: number; created: number; updated: number }> | null
+  created_at: string
 }

@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { ArrowUpRight, ListTree } from 'lucide-react'
+import { ArrowUpRight, Download, ListTree } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { StatTile, StatTileGrid } from '@/components/ui/StatTile'
@@ -8,9 +8,14 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Badge, StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { ErrorNotice, Spinner } from '@/components/ui/Feedback'
+import { useAuth } from '@/lib/auth-context'
+import { SetupCard } from '@/components/SetupCard'
 import { formatCurrency, formatDateTime, formatDuration, formatNumber, humanize } from '@/lib/utils'
 
 export function DashboardPage() {
+  const { can } = useAuth()
+  const setup = useQuery({ queryKey: ['setup-status'], queryFn: api.getSetupStatus })
+  const exportResults = useMutation({ mutationFn: api.downloadResults })
   const locations = useQuery({ queryKey: ['locations', 0, 1000], queryFn: () => api.listLocations(0, 1000) })
   const products = useQuery({ queryKey: ['products', 0, 1000], queryFn: () => api.listProducts(0, 1000) })
   const runs = useQuery({ queryKey: ['runs', 5], queryFn: () => api.listRuns(5) })
@@ -36,13 +41,24 @@ export function DashboardPage() {
               {summary.data ? summary.data.open_alerts : '—'}
             </p>
           </div>
-          <Link to="/optimization">
-            <Button size="sm">
-              Run pipeline <ArrowUpRight className="h-3.5 w-3.5" />
-            </Button>
-          </Link>
+          <Button variant="secondary" size="sm" onClick={() => exportResults.mutate()} loading={exportResults.isPending}>
+            {!exportResults.isPending && <Download className="h-3.5 w-3.5" />} Export
+          </Button>
+          {can('planner') && (
+            <Link to="/optimization">
+              <Button size="sm">
+                Run pipeline <ArrowUpRight className="h-3.5 w-3.5" />
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
+
+      {exportResults.isError && (
+        <ErrorNotice title="Export failed" message={exportResults.error instanceof ApiError ? exportResults.error.message : 'Please try again.'} />
+      )}
+
+      {setup.data && !setup.data.has_data && <SetupCard />}
 
       <PageHeader
         eyebrow="Control tower"
@@ -107,12 +123,12 @@ export function DashboardPage() {
             </Link>
           }
         />
-        <CardBody className="p-0">
+        <CardBody className="overflow-x-auto p-0">
           {runs.isLoading && <Spinner />}
           {runs.isError && <div className="p-5"><ErrorNotice message={(runs.error as Error).message} /></div>}
           {runs.data && runs.data.length === 0 && (
             <p className="px-5 py-8 text-center text-sm text-muted">
-              No pipeline runs yet — trigger one from the Optimization page.
+              {can('planner') ? 'No pipeline runs yet — trigger one from the Optimization page.' : 'No pipeline runs yet.'}
             </p>
           )}
           {runs.data && runs.data.length > 0 && (

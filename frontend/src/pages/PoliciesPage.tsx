@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Field'
 import { EmptyState, ErrorNotice, Spinner } from '@/components/ui/Feedback'
 import { formatNumber } from '@/lib/utils'
+import { useAuth } from '@/lib/auth-context'
 import type { PolicyOut, PolicyUpdate } from '@/lib/types'
 
 type EditableField = keyof PolicyUpdate
@@ -26,6 +27,8 @@ const EDITABLE_FIELDS: { key: EditableField; label: string; step?: string }[] = 
 const PAGE_SIZE = 50
 
 export function PoliciesPage() {
+  const { can } = useAuth()
+  const canEdit = can('planner')
   const [search, setSearch] = useState('')
   const [locationId, setLocationId] = useState('')
   const [skip, setSkip] = useState(0)
@@ -74,9 +77,13 @@ export function PoliciesPage() {
       <PageHeader
         eyebrow="Configuration"
         title="Policies"
-        description="Service levels and cost parameters per node-SKU. Changes here feed the next optimization run."
+        description={
+          canEdit
+            ? 'Service levels and cost parameters per node-SKU. Changes here feed the next optimization run.'
+            : 'Service levels and cost parameters per node-SKU. Read-only: planners and admins can edit these.'
+        }
         actions={
-          <>
+          canEdit && <>
             <Button variant="secondary" size="sm" disabled={unsavedCount === 0} onClick={() => setEdits({})}>
               Discard
             </Button>
@@ -104,13 +111,15 @@ export function PoliciesPage() {
           unit="%"
           caption="across all policies"
         />
-        <StatTile label="Unsaved edits" value={String(unsavedCount)} tone={unsavedCount > 0 ? 'warn' : 'default'} caption="kept while you page through" />
+        {canEdit && (
+          <StatTile label="Unsaved edits" value={String(unsavedCount)} tone={unsavedCount > 0 ? 'warn' : 'default'} caption="kept while you page through" />
+        )}
       </StatTileGrid>
 
       <Card>
         <CardHeader
           title="Policy grid"
-          description="Inline editable"
+          description={canEdit ? 'Inline editable' : 'Read-only'}
           action={
             <div className="flex flex-wrap gap-2">
               <Select
@@ -138,7 +147,7 @@ export function PoliciesPage() {
             </div>
           }
         />
-        <CardBody className="p-0">
+        <CardBody className="overflow-x-auto p-0">
           {isLoading && <Spinner />}
           {isError && <div className="p-5"><ErrorNotice message={(error as Error).message} /></div>}
           {data && data.length === 0 && <EmptyState title="No policies found" />}
@@ -168,6 +177,13 @@ export function PoliciesPage() {
                         </td>
                         {EDITABLE_FIELDS.map((f) => (
                           <td key={f.key} className="px-2 py-1.5">
+                            {!canEdit ? (
+                              <span className="block w-24 px-3 py-1 tabular-nums text-slate-700">
+                                {f.key === 'service_level'
+                                  ? formatNumber(policy.service_level * 100, 1)
+                                  : formatNumber(policy[f.key], f.step ? 2 : 0)}
+                              </span>
+                            ) : (
                             <Input
                               type="number"
                               step={f.step}
@@ -179,6 +195,7 @@ export function PoliciesPage() {
                               }
                               onChange={(e) => setField(policy, f.key, e.target.value)}
                             />
+                            )}
                           </td>
                         ))}
                       </tr>

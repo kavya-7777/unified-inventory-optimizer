@@ -30,26 +30,19 @@ migrate: ## Run database migrations inside Docker container
 seed: ## Seed database with initial data (keeps existing rows)
 	docker compose exec backend python /scripts/seed_database.py
 
-reset-seed: ## Wipe all data, including run history, and reseed (history ends yesterday)
+reset-seed: ## Wipe planning data and run history (users kept) and reseed (history ends yesterday)
 	docker compose exec backend python /scripts/seed_database.py --reset
 
-demo: ## Fresh demo: reset data, then run the network pipeline once
+demo: ## Fresh demo: reset planning data (users are kept), then run the network pipeline once
 	docker compose exec backend python /scripts/seed_database.py --reset
-	curl -sS -X POST http://localhost:8000/api/v1/network/run \
-		-H "Content-Type: application/json" \
-		-H "Authorization: Bearer $${API_KEY}" \
-		-d '{}'
-	@echo "\nNetwork run started; it finishes in a few seconds. Open http://localhost:5173"
-
+	docker compose exec backend python /scripts/run_pipeline.py
+	@echo "Open http://localhost:5173 and sign in (default admin@example.com / admin12345)."
 
 generate-data: ## Export the synthetic dataset to data/synthetic (seeding generates it itself)
-	python3 scripts/generate_data.py
+	docker compose exec backend python /scripts/generate_data.py
 
-run: ## Start a database-driven network pipeline run on the local backend
-	curl -sS -X POST http://localhost:8000/api/v1/network/run \
-		-H "Content-Type: application/json" \
-		-H "Authorization: Bearer $${API_KEY}" \
-		-d '{}'
+run: ## Run the database-driven network pipeline once (inside the backend container)
+	docker compose exec backend python /scripts/run_pipeline.py
 
 docker-up: ## Start local docker environment
 	docker compose up -d

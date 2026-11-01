@@ -34,7 +34,7 @@ npm run dev
 
 The app runs at `http://localhost:5173`. It expects the backend (see `../backend`) running at `VITE_API_URL` (default `http://localhost:8000`), with `CORS_ORIGINS` on the backend including `http://localhost:5173`.
 
-Bring up the full stack (Postgres + backend + frontend) from the repo root with:
+Bring up the full stack (MySQL + backend + frontend) from the repo root with:
 
 ```bash
 docker compose up

@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from sqlalchemy import func, insert
+from sqlalchemy import func, insert, select
 from sqlalchemy.orm import Session
 
 from app.models.base import utcnow
@@ -16,14 +16,18 @@ from app.models.inventory import (
 )
 
 BATCH_SIZE = 1000
+FORECAST_RUNS_KEPT = 5
 
 
 class PipelineRunRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, run_id: str, run_type: str, parameters: dict) -> PipelineRun:
-        run = PipelineRun(id=run_id, run_type=run_type, status="running", parameters=parameters)
+    def create(
+        self, run_id: str, run_type: str, parameters: dict, triggered_by: Optional[str] = None
+    ) -> PipelineRun:
+        run = PipelineRun(id=run_id, run_type=run_type, status="running", parameters=parameters,
+                          triggered_by=triggered_by)
         self.db.add(run)
         self.db.commit()
         self.db.refresh(run)
@@ -192,6 +196,22 @@ class ForecastRepository:
             query = query.filter(DemandForecast.product_id == product_id)
         rows = query.group_by(DemandForecast.location_id, DemandForecast.product_id).all()
         return [(loc, prod, float(avg or 0.0)) for loc, prod, avg in rows]
+
+    def prune_older_runs(self, keep_run_id: str, keep: int = FORECAST_RUNS_KEPT) -> int:
+        """
+        Deletes stored forecasts of all but the `keep` most recent runs (plus `keep_run_id`).
+        Run summaries, targets and alerts of older runs are untouched. Not committed.
+        """
+        with_forecasts = select(DemandForecast.pipeline_run_id).distinct()
+        run_ids = [rid for (rid,) in self.db.query(PipelineRun.id)
+                   .filter(PipelineRun.id.in_(with_forecasts), PipelineRun.id != keep_run_id)
+                   .order_by(PipelineRun.started_at.desc())]
+        old = run_ids[max(0, keep - 1):]
+        if not old:
+            return 0
+        return (self.db.query(DemandForecast)
+                .filter(DemandForecast.pipeline_run_id.in_(old))
+                .delete(synchronize_session=False))
 
     def bulk_save_rows(self, rows: List[dict]) -> int:
         """Stages pre-built forecast rows; committed by the caller."""
